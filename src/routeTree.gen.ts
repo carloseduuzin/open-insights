@@ -10,8 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as FinanceiroRouteImport } from './routes/financeiro'
+import { Route as OcorrenciasRouteImport } from './routes/ocorrencias'
+import { Route as PrestacaoRouteImport } from './routes/prestacao'
 import { Route as PrestadoresRouteImport } from './routes/prestadores'
+import { Route as RelatoriosRouteImport } from './routes/relatorios'
+import { Route as RomaneiosRouteImport } from './routes/romaneios'
 import { Route as RotasRouteImport } from './routes/rotas'
 
 const IndexRoute = IndexRouteImport.update({
@@ -19,14 +25,44 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
+  id: '/configuracoes',
+  path: '/configuracoes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FinanceiroRoute = FinanceiroRouteImport.update({
+  id: '/financeiro',
+  path: '/financeiro',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OcorrenciasRoute = OcorrenciasRouteImport.update({
+  id: '/ocorrencias',
+  path: '/ocorrencias',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrestacaoRoute = PrestacaoRouteImport.update({
+  id: '/prestacao',
+  path: '/prestacao',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrestadoresRoute = PrestadoresRouteImport.update({
   id: '/prestadores',
   path: '/prestadores',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RelatoriosRoute = RelatoriosRouteImport.update({
+  id: '/relatorios',
+  path: '/relatorios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RomaneiosRoute = RomaneiosRouteImport.update({
+  id: '/romaneios',
+  path: '/romaneios',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RotasRoute = RotasRouteImport.update({
@@ -37,35 +73,90 @@ const RotasRoute = RotasRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/configuracoes': typeof ConfiguracoesRoute
   '/dashboard': typeof DashboardRoute
+  '/financeiro': typeof FinanceiroRoute
+  '/ocorrencias': typeof OcorrenciasRoute
+  '/prestacao': typeof PrestacaoRoute
   '/prestadores': typeof PrestadoresRoute
+  '/relatorios': typeof RelatoriosRoute
+  '/romaneios': typeof RomaneiosRoute
   '/rotas': typeof RotasRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/configuracoes': typeof ConfiguracoesRoute
   '/dashboard': typeof DashboardRoute
+  '/financeiro': typeof FinanceiroRoute
+  '/ocorrencias': typeof OcorrenciasRoute
+  '/prestacao': typeof PrestacaoRoute
   '/prestadores': typeof PrestadoresRoute
+  '/relatorios': typeof RelatoriosRoute
+  '/romaneios': typeof RomaneiosRoute
   '/rotas': typeof RotasRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/configuracoes': typeof ConfiguracoesRoute
   '/dashboard': typeof DashboardRoute
+  '/financeiro': typeof FinanceiroRoute
+  '/ocorrencias': typeof OcorrenciasRoute
+  '/prestacao': typeof PrestacaoRoute
   '/prestadores': typeof PrestadoresRoute
+  '/relatorios': typeof RelatoriosRoute
+  '/romaneios': typeof RomaneiosRoute
   '/rotas': typeof RotasRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/prestadores' | '/rotas'
+  fullPaths:
+    | '/'
+    | '/configuracoes'
+    | '/dashboard'
+    | '/financeiro'
+    | '/ocorrencias'
+    | '/prestacao'
+    | '/prestadores'
+    | '/relatorios'
+    | '/romaneios'
+    | '/rotas'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/prestadores' | '/rotas'
-  id: '__root__' | '/' | '/dashboard' | '/prestadores' | '/rotas'
+  to:
+    | '/'
+    | '/configuracoes'
+    | '/dashboard'
+    | '/financeiro'
+    | '/ocorrencias'
+    | '/prestacao'
+    | '/prestadores'
+    | '/relatorios'
+    | '/romaneios'
+    | '/rotas'
+  id:
+    | '__root__'
+    | '/'
+    | '/configuracoes'
+    | '/dashboard'
+    | '/financeiro'
+    | '/ocorrencias'
+    | '/prestacao'
+    | '/prestadores'
+    | '/relatorios'
+    | '/romaneios'
+    | '/rotas'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConfiguracoesRoute: typeof ConfiguracoesRoute
   DashboardRoute: typeof DashboardRoute
+  FinanceiroRoute: typeof FinanceiroRoute
+  OcorrenciasRoute: typeof OcorrenciasRoute
+  PrestacaoRoute: typeof PrestacaoRoute
   PrestadoresRoute: typeof PrestadoresRoute
+  RelatoriosRoute: typeof RelatoriosRoute
+  RomaneiosRoute: typeof RomaneiosRoute
   RotasRoute: typeof RotasRoute
 }
 
@@ -78,6 +169,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/configuracoes': {
+      id: '/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/configuracoes'
+      preLoaderRoute: typeof ConfiguracoesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -85,11 +183,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/financeiro': {
+      id: '/financeiro'
+      path: '/financeiro'
+      fullPath: '/financeiro'
+      preLoaderRoute: typeof FinanceiroRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ocorrencias': {
+      id: '/ocorrencias'
+      path: '/ocorrencias'
+      fullPath: '/ocorrencias'
+      preLoaderRoute: typeof OcorrenciasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prestacao': {
+      id: '/prestacao'
+      path: '/prestacao'
+      fullPath: '/prestacao'
+      preLoaderRoute: typeof PrestacaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/prestadores': {
       id: '/prestadores'
       path: '/prestadores'
       fullPath: '/prestadores'
       preLoaderRoute: typeof PrestadoresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/relatorios': {
+      id: '/relatorios'
+      path: '/relatorios'
+      fullPath: '/relatorios'
+      preLoaderRoute: typeof RelatoriosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/romaneios': {
+      id: '/romaneios'
+      path: '/romaneios'
+      fullPath: '/romaneios'
+      preLoaderRoute: typeof RomaneiosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rotas': {
@@ -104,8 +237,14 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConfiguracoesRoute: ConfiguracoesRoute,
   DashboardRoute: DashboardRoute,
+  FinanceiroRoute: FinanceiroRoute,
+  OcorrenciasRoute: OcorrenciasRoute,
+  PrestacaoRoute: PrestacaoRoute,
   PrestadoresRoute: PrestadoresRoute,
+  RelatoriosRoute: RelatoriosRoute,
+  RomaneiosRoute: RomaneiosRoute,
   RotasRoute: RotasRoute,
 }
 export const routeTree = rootRouteImport
