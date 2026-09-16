@@ -10,33 +10,63 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as PrestadoresRouteImport } from './routes/prestadores'
+import { Route as RotasRouteImport } from './routes/rotas'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrestadoresRoute = PrestadoresRouteImport.update({
+  id: '/prestadores',
+  path: '/prestadores',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RotasRoute = RotasRouteImport.update({
+  id: '/rotas',
+  path: '/rotas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/prestadores': typeof PrestadoresRoute
+  '/rotas': typeof RotasRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/prestadores': typeof PrestadoresRoute
+  '/rotas': typeof RotasRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/prestadores': typeof PrestadoresRoute
+  '/rotas': typeof RotasRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/dashboard' | '/prestadores' | '/rotas'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/dashboard' | '/prestadores' | '/rotas'
+  id: '__root__' | '/' | '/dashboard' | '/prestadores' | '/rotas'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DashboardRoute: typeof DashboardRoute
+  PrestadoresRoute: typeof PrestadoresRoute
+  RotasRoute: typeof RotasRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +78,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prestadores': {
+      id: '/prestadores'
+      path: '/prestadores'
+      fullPath: '/prestadores'
+      preLoaderRoute: typeof PrestadoresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rotas': {
+      id: '/rotas'
+      path: '/rotas'
+      fullPath: '/rotas'
+      preLoaderRoute: typeof RotasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DashboardRoute: DashboardRoute,
+  PrestadoresRoute: PrestadoresRoute,
+  RotasRoute: RotasRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
