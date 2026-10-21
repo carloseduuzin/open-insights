@@ -1,32 +1,46 @@
 import type { SessaoUsuario } from "@/types";
+import { requireSupabase } from "@/lib/supabase";
 
-const STORAGE_KEY = "sigo.sessao";
-
-/**
- * Autenticação mock. Preparada para troca por Supabase:
- * basta substituir os corpos das funções por chamadas ao client.
- */
 export const authService = {
   async entrar(email: string, senha: string): Promise<SessaoUsuario> {
-    await new Promise((r) => setTimeout(r, 500));
-    if (!email || !senha) throw new Error("Informe e-mail e senha.");
-    const sessao: SessaoUsuario = { nome: email.split("@")[0] ?? "Operador", email };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessao));
-    return sessao;
+    const client = requireSupabase();
+    const { data, error } = await client.auth.signInWithPassword({ email, password: senha });
+    if (error) throw error;
+    if (!data.user) throw new Error("Não foi possível autenticar.");
+    const { data: active, error: activeError } = await client.rpc("sigo_is_active");
+    if (activeError || !active) {
+      await client.auth.signOut();
+      throw new Error("Usuário sem permissão ativa no SIGO. Solicite acesso ao administrador.");
+    }
+    const { data: profile } = await client.from("profiles").select("nome").eq("id", data.user.id).single();
+    return { nome: profile?.nome || email.split("@")[0] || "Operador", email };
   },
 
   async recuperarSenha(email: string): Promise<void> {
-    await new Promise((r) => setTimeout(r, 400));
     if (!email) throw new Error("Informe o e-mail para recuperar a senha.");
+    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/redefinir-senha` : undefined;
+    const { error } = await requireSupabase().auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) throw error;
   },
 
-  sair() {
-    localStorage.removeItem(STORAGE_KEY);
+  async definirNovaSenha(novaSenha: string): Promise<void> {
+    if (novaSenha.length < 12) throw new Error("A senha precisa ter pelo menos 12 caracteres.");
+    const { error } = await requireSupabase().auth.updateUser({ password: novaSenha });
+    if (error) throw error;
   },
 
-  sessaoAtual(): SessaoUsuario | null {
-    if (typeof window === "undefined") return null;
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as SessaoUsuario) : null;
+  async sair(): Promise<void> {
+    const { error } = await requireSupabase().auth.signOut();
+    if (error) throw error;
+  },
+
+  async sessaoAtual(): Promise<SessaoUsuario | null> {
+    const client = requireSupabase();
+    const { data: { user }, error } = await client.auth.getUser();
+    if (error || !user?.email) return null;
+    const { data: active, error: activeError } = await client.rpc("sigo_is_active");
+    if (activeError || !active) return null;
+    const { data: profile } = await client.from("profiles").select("nome").eq("id", user.id).single();
+    return { nome: profile?.nome || user.email.split("@")[0] || "Operador", email: user.email };
   },
 };
