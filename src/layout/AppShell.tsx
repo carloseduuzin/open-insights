@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   BarChart3,
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { authService } from "@/services/auth";
+import { useSessao } from "@/hooks/use-sessao";
 
 const navItems = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
@@ -41,6 +42,10 @@ export function AppShell({
   const [recolhida, setRecolhida] = useState(false);
   const [mobileAberta, setMobileAberta] = useState(false);
   const navigate = useNavigate();
+  const { sessao, carregando } = useSessao();
+  useEffect(() => {
+    if (!carregando && !sessao) navigate({ to: "/", replace: true });
+  }, [carregando, sessao, navigate]);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   async function sair() {
@@ -51,6 +56,9 @@ export function AppShell({
       window.alert(error instanceof Error ? error.message : "Não foi possível sair.");
     }
   }
+
+  if (carregando) return <div className="flex min-h-screen items-center justify-center">Validando acesso ao SIGO...</div>;
+  if (!sessao) return null;
 
   return (
     <div className="flex min-h-screen w-full bg-background">
