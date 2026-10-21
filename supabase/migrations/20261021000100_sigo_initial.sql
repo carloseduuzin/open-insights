@@ -1,5 +1,5 @@
 -- SIGO V1 - initial schema and access controls
--- REVIEW ONLY: apply to a disposable development project before production.
+-- Initial schema for the empty SIGO development database; review before applying to production.
 create extension if not exists pgcrypto;
 
 create table if not exists public.profiles (
