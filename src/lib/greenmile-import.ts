@@ -67,21 +67,21 @@ export function conciliarStopViews(paradas: Linha[], pedidos: Linha[]) {
   const erros: string[] = [];
   const porId = new Map<string, Linha>();
   for (const p of paradas) {
-    const id = p.id;
+    const id = p["id"];
     if (!id || porId.has(id)) { erros.push(`ID de parada ausente ou duplicado: ${id}`); continue; }
     porId.set(id, p);
   }
   const vistos = new Set<string>();
   const vinculos: VinculoGM[] = [];
   for (const pedido of pedidos) {
-    const id = pedido.id;
+    const id = pedido["id"];
     if (!id) { erros.push("Pedido sem ID de parada"); continue; }
     const parada = porId.get(id);
     if (!parada) { erros.push(`Pedido sem parada: ${id}`); continue; }
     vistos.add(id);
     const codigoRota = parada["Código da rota"] ?? "";
-    const data = parada["Data da Rota"] ?? "";
-    if (codigoRota !== pedido["routeView.route.key"] || data !== pedido["routeView.route.date"]) {
+    const data = (parada["Data da Rota"] ?? "").slice(0, 10);
+    if (codigoRota !== pedido["routeView.route.key"] || data !== (pedido["routeView.route.date"] ?? "").slice(0, 10)) {
       erros.push(`Divergência rota/data na parada ${id}`); continue;
     }
     const nf = normalizarNF(pedido["stop.orders.number"] ?? "");
