@@ -7,8 +7,9 @@ export function useSessao() {
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
-    setSessao(authService.sessaoAtual());
-    setCarregando(false);
+    let ativo = true;
+    authService.sessaoAtual().then((value) => { if (ativo) setSessao(value); }).catch(() => { if (ativo) setSessao(null); }).finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
   }, []);
 
   return { sessao, carregando, setSessao };
