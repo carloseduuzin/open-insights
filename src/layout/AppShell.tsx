@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileText,
   LayoutDashboard,
+  Upload,
   LogOut,
   Menu,
   Receipt,
@@ -22,6 +23,7 @@ import { prestadoresService } from "@/services/prestadores";
 const navItems = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
   { label: "Prestadores", to: "/prestadores", icon: Users },
+  { label: "Importação GM", to: "/importacao", icon: Upload },
   { label: "Rotas", to: "/rotas", icon: RouteIcon },
   { label: "Romaneios", to: "/romaneios", icon: ClipboardList },
   { label: "Prestação", to: "/prestacao", icon: Receipt },
@@ -51,7 +53,8 @@ export function AppShell({
   }, [carregando, sessao, navigate]);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   useEffect(() => {
-    if (!sessao) { setVerificandoPermissao(false); return; }
+    if (!sessao) { setAdmin(false); setVerificandoPermissao(false); return; }
+    setVerificandoPermissao(true);
     let mounted = true;
     prestadoresService.ehAdmin()
       .then((value) => { if (mounted) setAdmin(value); })
