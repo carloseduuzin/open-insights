@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { authService } from "@/services/auth";
 import { useSessao } from "@/hooks/use-sessao";
+import { prestadoresService } from "@/services/prestadores";
 
 const navItems = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
@@ -41,12 +42,23 @@ export function AppShell({
 }) {
   const [recolhida, setRecolhida] = useState(false);
   const [mobileAberta, setMobileAberta] = useState(false);
+  const [admin, setAdmin] = useState(false);
+  const [verificandoPermissao, setVerificandoPermissao] = useState(true);
   const navigate = useNavigate();
   const { sessao, carregando } = useSessao();
   useEffect(() => {
     if (!carregando && !sessao) navigate({ to: "/", replace: true });
   }, [carregando, sessao, navigate]);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  useEffect(() => {
+    if (!sessao) { setVerificandoPermissao(false); return; }
+    let mounted = true;
+    prestadoresService.ehAdmin()
+      .then((value) => { if (mounted) setAdmin(value); })
+      .catch(() => { if (mounted) setAdmin(false); })
+      .finally(() => { if (mounted) setVerificandoPermissao(false); });
+    return () => { mounted = false; };
+  }, [sessao]);
 
   async function sair() {
     try {
@@ -57,8 +69,9 @@ export function AppShell({
     }
   }
 
-  if (carregando) return <div className="flex min-h-screen items-center justify-center">Validando acesso ao SIGO...</div>;
+  if (carregando || verificandoPermissao) return <div className="flex min-h-screen items-center justify-center">Validando acesso ao SIGO...</div>;
   if (!sessao) return null;
+  const financeiroBloqueado = pathname === "/financeiro" && !admin;
 
   return (
     <div className="flex min-h-screen w-full bg-background">
@@ -92,7 +105,7 @@ export function AppShell({
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-          {navItems.map((item) => {
+          {navItems.filter((item) => item.to !== "/financeiro" || admin).map((item) => {
             const ativo = pathname === item.to;
             return (
               <Link
@@ -149,7 +162,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 p-4 md:p-6">{financeiroBloqueado ? <div role="alert" className="rounded-xl border border-border bg-card p-6"><h2 className="font-semibold">Acesso restrito</h2><p className="mt-2 text-sm text-muted-foreground">O módulo Financeiro é exclusivo para administradores do SIGO.</p></div> : children}</main>
       </div>
     </div>
   );
