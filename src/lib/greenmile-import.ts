@@ -30,7 +30,7 @@ export function lerCSV(conteudo: string): ResultadoCSV {
   if (!colunas.length || new Set(colunas).size !== colunas.length) throw new Error("Cabeçalho CSV vazio ou duplicado");
   const dados = linhas.map((valores, i) => {
     if (valores.length !== colunas.length) throw new Error(`CSV: linha ${i + 2} com ${valores.length} campos; esperado ${colunas.length}`);
-    return Object.fromEntries(colunas.map((coluna, indice) => [coluna, valores[indice]]));
+    return Object.fromEntries(colunas.map((coluna, indice) => [coluna, valores[indice] ?? ""]));
   });
   return { colunas, linhas: dados };
 }
@@ -41,7 +41,7 @@ export function normalizarNF(valor: string): NFNormalizada | null {
     numero: limpo.slice(25, 34), serie: String(Number(limpo.slice(22, 25))), chaveAcesso: limpo,
   };
   const gm = /^(\d{1,9})-(\d{1,3})$/.exec(limpo);
-  if (gm) return { numero: gm[1].padStart(9, "0"), serie: String(Number(gm[2])), chaveAcesso: null };
+  if (gm) return { numero: (gm[1] ?? "").padStart(9, "0"), serie: String(Number(gm[2] ?? "0")), chaveAcesso: null };
   if (/^\d{1,9}$/.test(limpo)) return { numero: limpo.padStart(9, "0"), serie: null, chaveAcesso: null };
   return null;
 }
@@ -89,7 +89,7 @@ export function conciliarStopViews(paradas: Linha[], pedidos: Linha[]) {
     const romaneio = parada["Descrição da rota"] || null;
     vinculos.push({
       idParada: id, data, codigoRota, romaneio,
-      motorista: parada.Motoristas || null, numeroNF: nf.numero, serie: nf.serie,
+      motorista: parada["Motoristas"] || null, numeroNF: nf.numero, serie: nf.serie,
       tipoRomaneio: classificarRomaneio(romaneio ?? ""),
     });
   }
