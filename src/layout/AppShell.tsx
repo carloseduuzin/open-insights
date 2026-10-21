@@ -43,9 +43,13 @@ export function AppShell({
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  function sair() {
-    authService.sair();
-    navigate({ to: "/", replace: true });
+  async function sair() {
+    try {
+      await authService.sair();
+      navigate({ to: "/", replace: true });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Não foi possível sair.");
+    }
   }
 
   return (
