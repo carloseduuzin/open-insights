@@ -82,7 +82,7 @@ for each row execute function public.sigo_set_updated_at();
 -- Database-generated updated_at is maintained by the trigger above.
 create or replace function public.sigo_guard_prestador_update()
 returns trigger language plpgsql set search_path = ''
-as $
+as $$
 begin
   if new.id is distinct from old.id
     or new.created_at is distinct from old.created_at
@@ -91,7 +91,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 create trigger prestadores_guard_update before update on public.prestadores
 for each row execute function public.sigo_guard_prestador_update();
 create trigger prestadores_updated_at before update on public.prestadores
