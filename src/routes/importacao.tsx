@@ -10,7 +10,10 @@ function Importacao() {
   const [pedidos, setPedidos] = useState<Arquivo | null>(null);
   const [erro, setErro] = useState("");
   const [processando, setProcessando] = useState(false);
-  const conciliacao = paradas && pedidos ? conciliarStopViews(paradas.linhas, pedidos.linhas) : null;
+  const paradasZL = paradas?.linhas.filter(linha => linha["Organização"]?.trim() === "RENOVELOG-ZL") ?? [];
+  const idsZL = new Set(paradasZL.map(linha => linha["id"]));
+  const pedidosZL = pedidos?.linhas.filter(linha => idsZL.has(linha["id"])) ?? [];
+  const conciliacao = paradas && pedidos ? conciliarStopViews(paradasZL, pedidosZL) : null;
   async function lerArquivo(file: File | undefined, tipo: "paradas" | "pedidos") {
     if (!file) return;
     setProcessando(true); setErro("");
@@ -19,7 +22,7 @@ function Importacao() {
       const csv = lerCSV(await file.text());
       if (!csv.colunas.includes("id")) throw new Error("Arquivo sem ID da parada.");
       if (tipo === "paradas") {
-        if (!csv.colunas.includes("Descrição da rota") || !csv.colunas.includes("Código da rota")) throw new Error("Selecione o StopView filtrado por Paradas.");
+        if (!csv.colunas.includes("Organização") || !csv.colunas.includes("Descrição da rota") || !csv.colunas.includes("Código da rota")) throw new Error("Selecione o StopView filtrado por Paradas.");
         setParadas({ nome: file.name, ...csv });
       } else {
         if (!csv.colunas.includes("stop.orders.number") || !csv.colunas.includes("routeView.route.key")) throw new Error("Selecione o StopView filtrado por Pedidos e Itens.");
@@ -46,7 +49,7 @@ function Importacao() {
         {erro && <p role="alert" className="mt-3 text-sm text-destructive">{erro}</p>}
       </div>
       {conciliacao && <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <h2 className="font-semibold">Resultado da pré-validação</h2>
+        <h2 className="font-semibold">Resultado da pré-validação — somente RENOVELOG-ZL</h2><p className="text-sm text-muted-foreground">Paradas de outras organizações excluídas: {(paradas!.linhas.length - paradasZL.length).toLocaleString("pt-BR")}. Pedidos fora do escopo excluídos: {(pedidos!.linhas.length - pedidosZL.length).toLocaleString("pt-BR")}.</p>
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg bg-muted p-3"><div className="text-xs">Paradas</div><div className="text-2xl font-semibold">{conciliacao.totalParadas.toLocaleString("pt-BR")}</div></div>
           <div className="rounded-lg bg-muted p-3"><div className="text-xs">NFs relacionadas</div><div className="text-2xl font-semibold">{conciliacao.vinculos.length.toLocaleString("pt-BR")}</div></div>
