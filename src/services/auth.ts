@@ -18,8 +18,14 @@ export const authService = {
 
   async recuperarSenha(email: string): Promise<void> {
     if (!email) throw new Error("Informe o e-mail para recuperar a senha.");
-    const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/redefinir-senha` : undefined;
     const { error } = await requireSupabase().auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) throw error;
+  },
+
+  async definirNovaSenha(novaSenha: string): Promise<void> {
+    if (novaSenha.length < 12) throw new Error("A senha precisa ter pelo menos 12 caracteres.");
+    const { error } = await requireSupabase().auth.updateUser({ password: novaSenha });
     if (error) throw error;
   },
 
