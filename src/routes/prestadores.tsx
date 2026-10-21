@@ -228,13 +228,13 @@ function Prestadores() {
             <DialogTitle>{editId ? "Editar prestador" : "Novo prestador"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Campo label="Nome" erro={erros.nome} className="sm:col-span-2">
+            <Campo label="Nome" erro={erros["nome"]} className="sm:col-span-2">
               <Input value={form.nome} maxLength={100} onChange={(e) => set("nome", e.target.value)} />
             </Campo>
-            <Campo label="CPF/CNPJ" erro={erros.documento}>
+            <Campo label="CPF/CNPJ" erro={erros["documento"]}>
               <Input value={form.documento} maxLength={20} onChange={(e) => set("documento", e.target.value)} />
             </Campo>
-            <Campo label="Base" erro={erros.base}>
+            <Campo label="Base" erro={erros["base"]}>
               <Select value={form.base} onValueChange={(v) => set("base", v)}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{BASES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
@@ -246,7 +246,7 @@ function Prestadores() {
                 <SelectContent>{VEICULOS.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
               </Select>
             </Campo>
-            <Campo label="Placa" erro={erros.placa}>
+            <Campo label="Placa" erro={erros["placa"]}>
               <Input value={form.placa} maxLength={8} placeholder="ABC-1D23" onChange={(e) => set("placa", e.target.value)} />
             </Campo>
             <Campo label="Disponibilidade">
@@ -279,8 +279,8 @@ function Campo({
   children,
 }: {
   label: string;
-  erro?: string;
-  className?: string;
+  erro?: string | undefined;
+  className?: string | undefined;
   children: React.ReactNode;
 }) {
   return (
