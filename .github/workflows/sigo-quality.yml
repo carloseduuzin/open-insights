@@ -21,6 +21,10 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test (synthetic data)
+        run: npm run test
       - name: Lint
         run: npm run lint
       - name: Build
