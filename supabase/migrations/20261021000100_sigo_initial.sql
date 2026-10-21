@@ -78,6 +78,22 @@ $$;
 
 create trigger profiles_updated_at before update on public.profiles
 for each row execute function public.sigo_set_updated_at();
+-- Prevent clients from changing creation metadata or record identity.
+-- Database-generated updated_at is maintained by the trigger above.
+create or replace function public.sigo_guard_prestador_update()
+returns trigger language plpgsql set search_path = ''
+as $
+begin
+  if new.id is distinct from old.id
+    or new.created_at is distinct from old.created_at
+    or new.created_by is distinct from old.created_by then
+    raise exception 'Campos de criação e identidade não podem ser alterados';
+  end if;
+  return new;
+end;
+$;
+create trigger prestadores_guard_update before update on public.prestadores
+for each row execute function public.sigo_guard_prestador_update();
 create trigger prestadores_updated_at before update on public.prestadores
 for each row execute function public.sigo_set_updated_at();
 
@@ -101,6 +117,7 @@ alter table public.prestadores enable row level security;
 revoke all on public.profiles, public.user_roles, public.prestadores from anon;
 grant select on public.profiles, public.user_roles, public.prestadores to authenticated;
 grant insert, update, delete on public.prestadores to authenticated;
+-- Profile changes require the admin-only UPDATE policy below.
 grant update on public.profiles to authenticated;
 
 create policy profiles_read on public.profiles for select to authenticated
@@ -126,4 +143,4 @@ using ((select public.sigo_has_role('admin')));
 
 -- Initial admin provisioning is intentionally excluded: use a controlled,
 -- authenticated administrative procedure after verifying the user's UUID.
--- Before applying: review UPDATE audit-field immutability and delete dependencies.
+-- Before applying: test UPDATE immutability, role bootstrap and delete dependencies.
