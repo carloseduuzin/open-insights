@@ -50,7 +50,7 @@ export const Route = createFileRoute("/prestadores")({
   component: Prestadores,
 });
 
-const BASES = ["Guarulhos", "Osasco", "Santo André", "Campinas", "Sorocaba", "Jundiaí"];
+const BASES = ["Cross Guarulhos", "Cross Sul", "Cross Barueri", "CD Limão"];
 const VEICULOS: TipoVeiculo[] = ["Moto", "Fiorino", "VUC"];
 const DISPON: Disponibilidade[] = ["Disponível", "Em rota", "Indisponível"];
 const STATUS: Prestador["status"][] = ["Ativo", "Pendente", "Inativo"];
@@ -110,6 +110,8 @@ function Prestadores() {
   const [form, setForm] = useState<Form>(vazio);
   const [erros, setErros] = useState<Record<string, string>>({});
 
+  const basesDisponiveis = useMemo(() => [...new Set([...BASES, ...lista.map((p) => p.base)])].sort(), [lista]);
+
   const filtrados = useMemo(
     () =>
       lista.filter(
@@ -122,12 +124,14 @@ function Prestadores() {
   );
 
   const abrirNovo = () => {
+    setErroApi(null);
     setEditId(null);
     setForm(vazio);
     setErros({});
     setAberto(true);
   };
   const abrirEdicao = (p: Prestador) => {
+    setErroApi(null);
     const { id, ...resto } = p;
     setEditId(id);
     setForm(resto);
@@ -152,7 +156,9 @@ function Prestadores() {
       setAberto(false);
       await recarregar();
     } catch (e) {
-      setErroApi(e instanceof Error ? e.message : "Não foi possível salvar.");
+      const mensagem = e instanceof Error ? e.message : "Não foi possível salvar.";
+      setErroApi(mensagem);
+      setErros((anterior) => ({ ...anterior, formulario: mensagem }));
     } finally {
       setSalvando(false);
     }
@@ -196,7 +202,7 @@ function Prestadores() {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="todas">Todas as bases</SelectItem>
-                {BASES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                {basesDisponiveis.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={fDisp} onValueChange={setFDisp}>
@@ -264,6 +270,7 @@ function Prestadores() {
           <DialogHeader>
             <DialogTitle>{editId ? "Editar prestador" : "Novo prestador"}</DialogTitle>
           </DialogHeader>
+          {erros["formulario"] && <p role="alert" className="text-sm text-destructive">{erros["formulario"]}</p>}
           <div className="grid gap-4 sm:grid-cols-2">
             <Campo label="Nome" erro={erros["nome"]} className="sm:col-span-2">
               <Input value={form.nome} maxLength={100} onChange={(e) => set("nome", e.target.value)} />
