@@ -45,21 +45,28 @@ function Prestacao() {
     finally { setCarregando(false); }
   }
   useEffect(()=>{void carregar();},[]);
-  async function darBaixa(item: PrestacaoRegistro) {
-    if (demo || item.status !== "CONFERIDA" || baixando) return;
-    const confirmado = window.confirm(`Confirmar que a prestação do romaneio ${item.romaneio_oficial} foi realmente ENVIADA à JTI? Ela sairá da fila de pendências e ficará registrada no histórico. Essa ação não pode ser desfeita nesta tela.`);
-    if (!confirmado) return;
+  async function avancar(item: PrestacaoRegistro) {
+    if (demo || baixando) return;
+    const etapa = item.status === "ABERTA" ? "RETORNADA" : item.status === "RETORNADA" ? "CONFERIDA" : item.status === "CONFERIDA" ? "ENVIADA_JTI" : null;
+    if (!etapa) return;
+    const texto = etapa === "RETORNADA" ? "registrar RETORNO À BASE" : etapa === "CONFERIDA" ? "registrar a CONFERÊNCIA" : "DAR BAIXA como ENVIADA À JTI";
+    if (!window.confirm(`Confirma ${texto} da prestação ${item.romaneio_oficial}? O usuário e horário serão registrados automaticamente.`)) return;
     setBaixando(item.id);
     setErro("");
     setSucesso("");
     try {
-      const { data, error } = await requireSupabase().rpc("sigo_enviar_prestacao_jti", {p_prestacao_id:item.id});
-      if (error) throw error;
-      if (!data || (Array.isArray(data) && data.length === 0)) throw new Error("Não foi possível confirmar a baixa no banco.");
-      setSucesso(`Prestação ${item.romaneio_oficial} baixada com sucesso. Consulte Baixadas / histórico.`);
+      const chamada = etapa === "ENVIADA_JTI"
+        ? await requireSupabase().rpc("sigo_enviar_prestacao_jti", { p_prestacao_id: item.id })
+        : await requireSupabase().rpc("sigo_avancar_prestacao", { p_prestacao_id: item.id, p_etapa: etapa });
+      if (chamada.error) throw chamada.error;
+      if (!chamada.data || (Array.isArray(chamada.data) && chamada.data.length === 0)) throw new Error("Não foi possível confirmar a alteração no banco.");
       await carregar();
-    } catch (e) {setErro(e instanceof Error?e.message:"Falha ao dar baixa. Confira se o romaneio já foi enviado.");}
-    finally {setBaixando(null);}
+      setSucesso(`Romaneio ${item.romaneio_oficial}: ${texto} registrado com sucesso.`);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao registrar a etapa.");
+    } finally {
+      setBaixando(null);
+    }
   }
   const lista = useMemo(()=> (demo?amostra:registros).map(r=>({...r,crit:criticidadePrestacao(r,hoje)})),[demo,registros,hoje]);
   const contagens = {
@@ -99,22 +106,22 @@ function Prestacao() {
         </div>
         {!demo && carregando ? <p className="text-sm text-muted-foreground">Consultando Supabase...</p> : visiveis.length===0 ? <p className="rounded-lg bg-muted p-5 text-sm text-muted-foreground">{erro && !demo?"Não foi possível carregar os dados.":"Nenhuma prestação encontrada para este filtro. A importação GreenMile ainda não gera prestações automaticamente."}</p> :
           <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm">
-            <thead className="border-b border-border text-muted-foreground"><tr>{["Romaneio oficial","Data da rota (D0)","Vencimento (D+3)","Dias","Etapa","Criticidade","Responsável","Baixa / envio JTI"].map(t=><th key={t} className="px-3 py-3 font-medium">{t}</th>)}</tr></thead>
+            <thead className="border-b border-border text-muted-foreground"><tr>{["Romaneio oficial","Data da rota (D0)","Vencimento (D+3)","Dias","Etapa","Criticidade","Responsável","Próxima ação"].map(t=><th key={t} className="px-3 py-3 font-medium">{t}</th>)}</tr></thead>
             <tbody>{visiveis.map(r=><tr key={r.id} className="border-b border-border/60">
               <td className="px-3 py-3 font-mono">{r.romaneio_oficial}</td><td className="px-3 py-3">{r.d0}</td><td className="px-3 py-3">{vencimentoD3(r.d0)}</td>
               <td className="px-3 py-3">{r.crit.dias>=0?`D+${r.crit.dias}`:"Futura"}</td><td className="px-3 py-3">{statusTexto[r.status]??r.status}</td>
               <td className={`px-3 py-3 font-medium ${tom[r.crit.nivel]??""}`}>{r.crit.rotulo}</td>
               <td className="px-3 py-3">{r.responsavel_id?"ID cadastrado":"Não definido"}</td>
               <td className="px-3 py-3">
-                {r.status === "CONFERIDA" && !demo ?
-                  <button type="button" disabled={!!baixando || carregando} onClick={()=>void darBaixa(r)} className="whitespace-nowrap rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">{baixando===r.id?"Registrando...":"Dar baixa — Enviado à JTI"}</button> :
+                {!demo && (r.status === "ABERTA" || r.status === "RETORNADA" || r.status === "CONFERIDA") ?
+                  <button type="button" disabled={!!baixando || carregando} onClick={()=>void avancar(r)} className="whitespace-nowrap rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">{baixando===r.id ? "Registrando..." : r.status === "ABERTA" ? "Registrar retorno" : r.status === "RETORNADA" ? "Conferir prestação" : "Dar baixa — Enviado à JTI"}</button> :
                   r.status === "ENVIADA_JTI" || r.status === "CONFIRMADA_JTI" ?
                     <span className="text-xs text-emerald-500">Baixada {r.enviada_em?new Date(r.enviada_em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):""}</span> :
                     <span className="text-xs text-muted-foreground">{demo?"Simulação — sem ações": "Aguardando conferência"}</span>}
               </td>
             </tr>)}</tbody>
           </table></div>}
-        <p className="text-xs text-muted-foreground">A baixa só é permitida para prestações conferidas. Após confirmação, o servidor registra usuário e horário e retira o romaneio da fila ativa. A demonstração nunca grava dados.</p>
+        <p className="text-xs text-muted-foreground">Fluxo obrigatório: Aberta → Retornada → Conferida → Enviada JTI (baixa). O servidor registra usuário e horário em cada etapa; a demonstração nunca grava dados.</p>
       </section>
     </div>
   </AppShell>;
