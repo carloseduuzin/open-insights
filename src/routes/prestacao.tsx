@@ -31,7 +31,7 @@ function Prestacao() {
   const [erro,setErro] = useState("");
   const [demo,setDemo] = useState(false);
   const [busca,setBusca] = useState("");
-  const [filtro,setFiltro] = useState("TODAS");
+  const [filtro,setFiltro] = useState("ATIVAS");
   const hoje = dataLocalHoje();
   async function carregar() {
     setCarregando(true);setErro("");
@@ -45,13 +45,13 @@ function Prestacao() {
   useEffect(()=>{void carregar();},[]);
   const lista = useMemo(()=> (demo?amostra:registros).map(r=>({...r,crit:criticidadePrestacao(r,hoje)})),[demo,registros,hoje]);
   const contagens = {
-    total:lista.length,
+    total:lista.filter(r=>r.crit.nivel!=="CONCLUIDA").length,
     criticos:lista.filter(r=>r.crit.nivel==="CRITICO").length,
     urgentes:lista.filter(r=>r.crit.nivel==="URGENTE").length,
     alertas:lista.filter(r=>r.crit.nivel==="ALERTA").length,
     concluidas:lista.filter(r=>r.crit.nivel==="CONCLUIDA").length,
   };
-  const visiveis=lista.filter(r=>(filtro==="TODAS"||r.crit.nivel===filtro)&&r.romaneio_oficial.includes(busca.trim())).sort((a,b)=>{
+  const visiveis=lista.filter(r=>(filtro==="TODAS" || (filtro==="ATIVAS" ? r.crit.nivel!=="CONCLUIDA" : r.crit.nivel===filtro))&&r.romaneio_oficial.includes(busca.trim())).sort((a,b)=>{
     const ordem:Record<string,number>={CRITICO:0,URGENTE:1,ALERTA:2,NO_PRAZO:3,FUTURA:4,CONCLUIDA:5};
     return (ordem[a.crit.nivel]??9)-(ordem[b.crit.nivel]??9)||a.d0.localeCompare(b.d0);
   });
@@ -67,15 +67,15 @@ function Prestacao() {
         {demo && <p role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-medium">MODO DEMONSTRAÇÃO — dados fictícios, sem relação com a operação real. Nenhuma alteração no Supabase.</p>}
         {!demo && erro && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">Falha ao consultar: {erro}</p>}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          {([["Romaneios",contagens.total],["Críticos D+4",contagens.criticos],["Urgentes D+3",contagens.urgentes],["Alerta D+2",contagens.alertas],["Confirmadas",contagens.concluidas]] as const).map(([nome,numero])=><div key={nome} className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">{nome}</p><p className="mt-1 text-2xl font-semibold">{numero.toLocaleString("pt-BR")}</p></div>)}
+          {([["Pendências ativas",contagens.total],["Críticos D+4",contagens.criticos],["Urgentes D+3",contagens.urgentes],["Alerta D+2",contagens.alertas],["Baixadas",contagens.concluidas]] as const).map(([nome,numero])=><div key={nome} className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">{nome}</p><p className="mt-1 text-2xl font-semibold">{numero.toLocaleString("pt-BR")}</p></div>)}
         </div>
-        <p className="text-xs text-muted-foreground">Data de referência: {hoje.split("-").reverse().join("/")}. A criticidade representa atraso de prestação, não status da entrega. Confirmadas pela JTI saem da fila ativa.</p>
+        <p className="text-xs text-muted-foreground">Data de referência: {hoje.split("-").reverse().join("/")}. A criticidade representa atraso de prestação, não status da entrega. Enviadas à JTI recebem baixa no SIGO e saem da fila ativa; a confirmação posterior da JTI permanece no histórico.</p>
       </section>
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div className="flex flex-wrap gap-3">
           <input aria-label="Buscar romaneio" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Localizar romaneio (12 dígitos)" className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm" />
           <select aria-label="Filtrar criticidade" value={filtro} onChange={e=>setFiltro(e.target.value)} className="rounded-md border border-input bg-background px-3 py-2 text-sm">
-            <option value="TODAS">Todas</option><option value="CRITICO">Críticas</option><option value="URGENTE">Urgentes</option><option value="ALERTA">Alertas</option><option value="NO_PRAZO">No prazo</option><option value="CONCLUIDA">Confirmadas</option><option value="FUTURA">Futuras</option>
+            <option value="ATIVAS">Pendências ativas</option><option value="TODAS">Todas (inclui histórico)</option><option value="CRITICO">Críticas</option><option value="URGENTE">Urgentes</option><option value="ALERTA">Alertas</option><option value="NO_PRAZO">No prazo</option><option value="CONCLUIDA">Baixadas / histórico</option><option value="FUTURA">Futuras</option>
           </select>
         </div>
         {!demo && carregando ? <p className="text-sm text-muted-foreground">Consultando Supabase...</p> : visiveis.length===0 ? <p className="rounded-lg bg-muted p-5 text-sm text-muted-foreground">{erro && !demo?"Não foi possível carregar os dados.":"Nenhuma prestação encontrada para este filtro. A importação GreenMile ainda não gera prestações automaticamente."}</p> :
