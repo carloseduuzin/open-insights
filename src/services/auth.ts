@@ -19,7 +19,7 @@ export const authService = {
   async recuperarSenha(email: string): Promise<void> {
     if (!email) throw new Error("Informe o e-mail para recuperar a senha.");
     const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/redefinir-senha` : undefined;
-    const { error } = await requireSupabase().auth.resetPasswordForEmail(email, { redirectTo });
+    const { error } = await requireSupabase().auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : {});
     if (error) throw error;
   },
 
