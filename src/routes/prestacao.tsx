@@ -14,10 +14,10 @@ const statusTexto: Record<PrestacaoRegistro["status"],string> = {
   ENVIADA_JTI: "Enviada à JTI", CONFIRMADA_JTI: "Confirmada JTI",
 };
 const amostra: PrestacaoRegistro[] = [
-  { id:"exemplo1",romaneio_oficial:"601615010667",d0:"2026-10-27",status:"ABERTA",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
-  { id:"exemplo2",romaneio_oficial:"601615010659",d0:"2026-10-29",status:"CONFERIDA",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
-  { id:"exemplo3",romaneio_oficial:"601615010640",d0:"2026-10-31",status:"ENVIADA_JTI",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
-  { id:"exemplo4",romaneio_oficial:"601615021103",d0:"2026-11-02",status:"CONFIRMADA_JTI",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
+  { id:"exemplo1",romaneio_oficial:"123456789012",d0:"2026-10-27",status:"ABERTA",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
+  { id:"exemplo2",romaneio_oficial:"234567890123",d0:"2026-10-29",status:"CONFERIDA",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
+  { id:"exemplo3",romaneio_oficial:"345678901234",d0:"2026-10-31",status:"ENVIADA_JTI",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
+  { id:"exemplo4",romaneio_oficial:"456789012345",d0:"2026-11-02",status:"CONFIRMADA_JTI",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
 ];
 function dataLocalHoje(): string {
   const agora = new Date();
