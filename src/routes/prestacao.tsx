@@ -32,6 +32,8 @@ function Prestacao() {
   const [demo,setDemo] = useState(false);
   const [busca,setBusca] = useState("");
   const [filtro,setFiltro] = useState("ATIVAS");
+  const [baixando,setBaixando] = useState<string | null>(null);
+  const [sucesso,setSucesso] = useState("");
   const hoje = dataLocalHoje();
   async function carregar() {
     setCarregando(true);setErro("");
@@ -43,6 +45,22 @@ function Prestacao() {
     finally { setCarregando(false); }
   }
   useEffect(()=>{void carregar();},[]);
+  async function darBaixa(item: PrestacaoRegistro) {
+    if (demo || item.status !== "CONFERIDA" || baixando) return;
+    const confirmado = window.confirm(`Confirmar que a prestação do romaneio ${item.romaneio_oficial} foi realmente ENVIADA à JTI? Ela sairá da fila de pendências e ficará registrada no histórico. Essa ação não pode ser desfeita nesta tela.`);
+    if (!confirmado) return;
+    setBaixando(item.id);
+    setErro("");
+    setSucesso("");
+    try {
+      const { data, error } = await requireSupabase().rpc("sigo_enviar_prestacao_jti", {p_prestacao_id:item.id});
+      if (error) throw error;
+      if (!data || (Array.isArray(data) && data.length === 0)) throw new Error("Não foi possível confirmar a baixa no banco.");
+      setSucesso(`Prestação ${item.romaneio_oficial} baixada com sucesso. Consulte Baixadas / histórico.`);
+      await carregar();
+    } catch (e) {setErro(e instanceof Error?e.message:"Falha ao dar baixa. Confira se o romaneio já foi enviado.");}
+    finally {setBaixando(null);}
+  }
   const lista = useMemo(()=> (demo?amostra:registros).map(r=>({...r,crit:criticidadePrestacao(r,hoje)})),[demo,registros,hoje]);
   const contagens = {
     total:lista.filter(r=>r.crit.nivel!=="CONCLUIDA").length,
@@ -65,6 +83,7 @@ function Prestacao() {
         </div>
         <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)} />Exibir demonstração com registros fictícios (não salvos)</label>
         {demo && <p role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-medium">MODO DEMONSTRAÇÃO — dados fictícios, sem relação com a operação real. Nenhuma alteração no Supabase.</p>}
+        {sucesso && !demo && <p role="status" className="rounded-lg border border-emerald-500/30 p-3 text-sm text-emerald-500">{sucesso}</p>}
         {!demo && erro && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">Falha ao consultar: {erro}</p>}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           {([["Pendências ativas",contagens.total],["Críticos D+4",contagens.criticos],["Urgentes D+3",contagens.urgentes],["Alerta D+2",contagens.alertas],["Baixadas",contagens.concluidas]] as const).map(([nome,numero])=><div key={nome} className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">{nome}</p><p className="mt-1 text-2xl font-semibold">{numero.toLocaleString("pt-BR")}</p></div>)}
@@ -80,15 +99,22 @@ function Prestacao() {
         </div>
         {!demo && carregando ? <p className="text-sm text-muted-foreground">Consultando Supabase...</p> : visiveis.length===0 ? <p className="rounded-lg bg-muted p-5 text-sm text-muted-foreground">{erro && !demo?"Não foi possível carregar os dados.":"Nenhuma prestação encontrada para este filtro. A importação GreenMile ainda não gera prestações automaticamente."}</p> :
           <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm">
-            <thead className="border-b border-border text-muted-foreground"><tr>{["Romaneio oficial","Data da rota (D0)","Vencimento (D+3)","Dias","Etapa","Criticidade","Responsável"].map(t=><th key={t} className="px-3 py-3 font-medium">{t}</th>)}</tr></thead>
+            <thead className="border-b border-border text-muted-foreground"><tr>{["Romaneio oficial","Data da rota (D0)","Vencimento (D+3)","Dias","Etapa","Criticidade","Responsável","Baixa / envio JTI"].map(t=><th key={t} className="px-3 py-3 font-medium">{t}</th>)}</tr></thead>
             <tbody>{visiveis.map(r=><tr key={r.id} className="border-b border-border/60">
               <td className="px-3 py-3 font-mono">{r.romaneio_oficial}</td><td className="px-3 py-3">{r.d0}</td><td className="px-3 py-3">{vencimentoD3(r.d0)}</td>
               <td className="px-3 py-3">{r.crit.dias>=0?`D+${r.crit.dias}`:"Futura"}</td><td className="px-3 py-3">{statusTexto[r.status]??r.status}</td>
               <td className={`px-3 py-3 font-medium ${tom[r.crit.nivel]??""}`}>{r.crit.rotulo}</td>
               <td className="px-3 py-3">{r.responsavel_id?"ID cadastrado":"Não definido"}</td>
+              <td className="px-3 py-3">
+                {r.status === "CONFERIDA" && !demo ?
+                  <button type="button" disabled={!!baixando || carregando} onClick={()=>void darBaixa(r)} className="whitespace-nowrap rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">{baixando===r.id?"Registrando...":"Dar baixa — Enviado à JTI"}</button> :
+                  r.status === "ENVIADA_JTI" || r.status === "CONFIRMADA_JTI" ?
+                    <span className="text-xs text-emerald-500">Baixada {r.enviada_em?new Date(r.enviada_em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):""}</span> :
+                    <span className="text-xs text-muted-foreground">{demo?"Simulação — sem ações": "Aguardando conferência"}</span>}
+              </td>
             </tr>)}</tbody>
           </table></div>}
-        <p className="text-xs text-muted-foreground">Consulta somente leitura. Não altera status, não confirma prestação e não gera cobranças. Responsáveis serão apresentados pelo nome após validação das permissões.</p>
+        <p className="text-xs text-muted-foreground">A baixa só é permitida para prestações conferidas. Após confirmação, o servidor registra usuário e horário e retira o romaneio da fila ativa. A demonstração nunca grava dados.</p>
       </section>
     </div>
   </AppShell>;
