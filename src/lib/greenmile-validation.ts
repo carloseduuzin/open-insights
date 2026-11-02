@@ -1,7 +1,7 @@
 /** Audit-first GreenMile import staging.
  * Preview only: all raw records remain client-side until server-side import is approved.
  */
-import { lerCSV, conciliarStopViews, classificarRomaneio, type Linha } from "./greenmile-import";
+import { lerCSV, conciliarStopViews, classificarRomaneio, type Linha } from "./greenmile-import.ts";
 
 export type ResumoImportacao = {
   totalParadasZL: number;
