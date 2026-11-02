@@ -20,7 +20,7 @@ export function diferencaDias(d0: string, hoje: string): number {
 }
 export function criticidadePrestacao(item: Pick<PrestacaoRegistro,"d0"|"status">, hoje: string) {
   const dias = diferencaDias(item.d0, hoje);
-  if (item.status === "CONFIRMADA_JTI") return { nivel: "CONCLUIDA" as const, dias, rotulo: "Confirmada JTI" };
+  if (item.status === "ENVIADA_JTI" || item.status === "CONFIRMADA_JTI") return { nivel: "CONCLUIDA" as const, dias, rotulo: item.status === "ENVIADA_JTI" ? "Baixada — enviada à JTI" : "Confirmada pela JTI" };
   if (dias >= 4) return { nivel: "CRITICO" as const, dias, rotulo: "Crítico — D+4 ou mais" };
   if (dias === 3) return { nivel: "URGENTE" as const, dias, rotulo: "Urgente — vence hoje" };
   if (dias === 2) return { nivel: "ALERTA" as const, dias, rotulo: "Alerta — D+2" };
