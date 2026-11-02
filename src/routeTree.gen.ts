@@ -9,6 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ImportacaoRouteImport } from './routes/importacao'
+import { Route as RedefinirSenhaRouteImport } from './routes/redefinir-senha'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -20,6 +22,16 @@ import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as RomaneiosRouteImport } from './routes/romaneios'
 import { Route as RotasRouteImport } from './routes/rotas'
 
+const ImportacaoRoute = ImportacaoRouteImport.update({
+  id: '/importacao',
+  path: '/importacao',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RedefinirSenhaRoute = RedefinirSenhaRouteImport.update({
+  id: '/redefinir-senha',
+  path: '/redefinir-senha',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -72,6 +84,8 @@ const RotasRoute = RotasRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/redefinir-senha': typeof RedefinirSenhaRoute
+  '/importacao': typeof ImportacaoRoute
   '/': typeof IndexRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/dashboard': typeof DashboardRoute
@@ -84,6 +98,8 @@ export interface FileRoutesByFullPath {
   '/rotas': typeof RotasRoute
 }
 export interface FileRoutesByTo {
+  '/redefinir-senha': typeof RedefinirSenhaRoute
+  '/importacao': typeof ImportacaoRoute
   '/': typeof IndexRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/dashboard': typeof DashboardRoute
@@ -96,6 +112,8 @@ export interface FileRoutesByTo {
   '/rotas': typeof RotasRoute
 }
 export interface FileRoutesById {
+  '/redefinir-senha': typeof RedefinirSenhaRoute
+  '/importacao': typeof ImportacaoRoute
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/configuracoes': typeof ConfiguracoesRoute
@@ -111,6 +129,8 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/redefinir-senha'
+    | '/importacao'
     | '/'
     | '/configuracoes'
     | '/dashboard'
@@ -123,6 +143,8 @@ export interface FileRouteTypes {
     | '/rotas'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/redefinir-senha'
+    | '/importacao'
     | '/'
     | '/configuracoes'
     | '/dashboard'
@@ -134,6 +156,8 @@ export interface FileRouteTypes {
     | '/romaneios'
     | '/rotas'
   id:
+    | '/redefinir-senha'
+    | '/importacao'
     | '__root__'
     | '/'
     | '/configuracoes'
@@ -148,6 +172,8 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  RedefinirSenhaRoute: typeof RedefinirSenhaRoute
+  ImportacaoRoute: typeof ImportacaoRoute
   IndexRoute: typeof IndexRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   DashboardRoute: typeof DashboardRoute
@@ -162,6 +188,20 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/redefinir-senha': {
+      id: '/redefinir-senha'
+      path: '/redefinir-senha'
+      fullPath: '/redefinir-senha'
+      preLoaderRoute: typeof RedefinirSenhaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/importacao': {
+      id: '/importacao'
+      path: '/importacao'
+      fullPath: '/importacao'
+      preLoaderRoute: typeof ImportacaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -236,6 +276,8 @@ declare module '@tanstack/react-router' {
 }
 
 const rootRouteChildren: RootRouteChildren = {
+  RedefinirSenhaRoute: RedefinirSenhaRoute,
+  ImportacaoRoute: ImportacaoRoute,
   IndexRoute: IndexRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   DashboardRoute: DashboardRoute,
