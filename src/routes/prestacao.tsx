@@ -34,6 +34,9 @@ function Prestacao() {
   const [filtro,setFiltro] = useState("ATIVAS");
   const [baixando,setBaixando] = useState<string | null>(null);
   const [sucesso,setSucesso] = useState("");
+  const [novoRomaneio,setNovoRomaneio] = useState("");
+  const [novaData,setNovaData] = useState("");
+  const [criando,setCriando] = useState(false);
   const hoje = dataLocalHoje();
   async function carregar() {
     setCarregando(true);setErro("");
@@ -68,6 +71,24 @@ function Prestacao() {
       setBaixando(null);
     }
   }
+  async function criarPrestacao(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (demo || criando || !/^\\d{12}$/.test(novoRomaneio) || !novaData) return;
+    if (!window.confirm(`Cadastrar romaneio oficial ${novoRomaneio}, D0 ${novaData}? Confirme os dados no GreenMile antes de prosseguir.`)) return;
+    setCriando(true);
+    setErro("");
+    setSucesso("");
+    try {
+      const {data,error} = await requireSupabase().rpc("sigo_criar_prestacao",{p_romaneio:novoRomaneio,p_d0:novaData});
+      if (error) throw error;
+      if (!data || (Array.isArray(data) && data.length===0)) throw new Error("Cadastro não confirmado no banco");
+      setSucesso(`Romaneio ${novoRomaneio} cadastrado na fila de prestação.`);
+      setNovoRomaneio("");setNovaData("");
+      setFiltro("ATIVAS");
+      await carregar();
+    } catch(e) {setErro(e instanceof Error?e.message:"Erro ao cadastrar prestação.");}
+    finally {setCriando(false);}
+  }
   const lista = useMemo(()=> (demo?amostra:registros).map(r=>({...r,crit:criticidadePrestacao(r,hoje)})),[demo,registros,hoje]);
   const contagens = {
     total:lista.filter(r=>r.crit.nivel!=="CONCLUIDA").length,
@@ -96,6 +117,16 @@ function Prestacao() {
           {([["Pendências ativas",contagens.total],["Críticos D+4",contagens.criticos],["Urgentes D+3",contagens.urgentes],["Alerta D+2",contagens.alertas],["Baixadas",contagens.concluidas]] as const).map(([nome,numero])=><div key={nome} className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">{nome}</p><p className="mt-1 text-2xl font-semibold">{numero.toLocaleString("pt-BR")}</p></div>)}
         </div>
         <p className="text-xs text-muted-foreground">Data de referência: {hoje.split("-").reverse().join("/")}. A criticidade representa atraso de prestação, não status da entrega. Enviadas à JTI recebem baixa no SIGO e saem da fila ativa; a confirmação posterior da JTI permanece no histórico.</p>
+      </section>
+      <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <h2 className="font-semibold">Cadastrar prestação por romaneio oficial</h2>
+        <p className="text-xs text-muted-foreground">Cadastro manual controlado para o piloto. Confira o romaneio de origem e a data D0 no GreenMile. Romaneios auxiliares não devem ser cadastrados como prestação fiscal.</p>
+        <form onSubmit={e=>void criarPrestacao(e)} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <label className="space-y-1 text-sm">Romaneio oficial (12 dígitos)<input required maxLength={12} pattern="[0-9]{12}" value={novoRomaneio} onChange={e=>setNovoRomaneio(e.target.value.replace(/\\D/g,"").slice(0,12))} className="w-full rounded-md border border-input bg-background px-3 py-2" placeholder="000000000000" disabled={demo || criando}/></label>
+          <label className="space-y-1 text-sm">Data da rota (D0)<input required type="date" max={hoje} value={novaData} onChange={e=>setNovaData(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2" disabled={demo || criando}/></label>
+          <button type="submit" disabled={demo || criando || novoRomaneio.length!==12 || !novaData} className="rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-40">{criando?"Registrando...":"Cadastrar"}</button>
+        </form>
+        {demo && <p className="text-xs text-amber-500">Desative a demonstração para cadastrar. Não use dados reais apenas para testar o botão.</p>}
       </section>
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div className="flex flex-wrap gap-3">
