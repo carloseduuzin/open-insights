@@ -21,6 +21,7 @@ function Importacao() {
   const [mostrarAlertas, setMostrarAlertas] = useState(true);
   const [gravando,setGravando] = useState(false);
   const [feedback,setFeedback] = useState("");
+  const [cientePendencias,setCientePendencias] = useState(false);
 
   const auditoria = useMemo(() => {
     if (!paradas || !pedidos) return null;
@@ -99,7 +100,7 @@ function Importacao() {
 
   async function lerArquivo(file: File | undefined, tipo: "paradas" | "pedidos") {
     if (!file) return;
-    setProcessando(true); setErro("");
+    setProcessando(true); setErro(""); setCientePendencias(false);
     try {
       if (file.size > 35 * 1024 * 1024) throw new Error("Arquivo acima de 35 MB. Divida a exportação por período.");
       const csv = lerCSV(await file.text());
@@ -122,10 +123,10 @@ function Importacao() {
   },[paradas,pedidos]);
   const hoje = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const futuras = preparacao?.candidatos.filter(c=>c.d0>hoje).length ?? 0;
-  const permitido = !!preparacao && !preparacao.bloqueado && futuras===0 && preparacao.candidatos.length>0;
+  const permitido = !!preparacao && !preparacao.bloqueado && futuras===0 && preparacao.candidatos.length>0 && (preparacao.pendenciasNF.length===0 || cientePendencias);
   async function gravarPrestacoes() {
     if (!permitido || !preparacao || gravando) return;
-    const confirmado = window.confirm(`CONFIRMAR abertura da fila de prestação para ${preparacao.candidatos.length} romaneios fiscais oficiais? A gravação é real, não muda prestações já cadastradas, e romaneios auxiliares são excluídos.`);
+    const confirmado = window.confirm(`CONFIRMAR abertura da fila de prestação para ${preparacao.candidatos.length} romaneios fiscais oficiais? A gravação é real, não muda prestações já cadastradas, e romaneios auxiliares são excluídos. Existem ${preparacao.pendenciasNF.length} pendências de NF que deverão ser tratadas antes da conferência/baixa.`);
     if (!confirmado) return;
     setGravando(true);setFeedback("");setErro("");
     try {
@@ -200,12 +201,18 @@ function Importacao() {
           <p className="text-sm text-muted-foreground">Prévia: <strong>{preparacao?.candidatos.length??0} romaneios oficiais candidatos</strong>, {preparacao?.auxiliares??0} rotas auxiliares excluídas. A importação cria somente prestações ainda inexistentes; nunca apaga, reinicia ou reabre romaneios baixados. Não grava rotas, paradas nem NFs.</p>
           {futuras>0 && <p className="rounded-md border border-amber-500/40 p-3 text-sm text-amber-500">{futuras} rota(s) com D0 no futuro. Aguarde a data da rota para abrir a prestação; hoje nenhum dado será gravado.</p>}
           {!!preparacao?.avisos.length && <p className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Importação bloqueada: {preparacao.avisos.length} ocorrência(s) de conciliação ou romaneio. Revise os arquivos antes de gravar.</p>}
+          {!!preparacao?.pendenciasNF.length && <div className="space-y-3 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
+            <p className="font-semibold text-amber-500">{preparacao.pendenciasNF.length} pendência(s) fiscal(is) — não impedem abrir a fila, mas devem ser corrigidas antes de conferir ou baixar.</p>
+            <p className="text-muted-foreground">Os romaneios serão cadastrados apenas como ABERTA. O SIGO não está validando essas NFs ou dando baixa nelas.</p>
+            <ul className="list-disc space-y-1 pl-5">{preparacao.pendenciasNF.map(p=><li key={p.idParada}>Parada <strong>{p.idParada}</strong>, rota <strong>{p.rota||"não identificada"}</strong>, romaneio <strong>{p.romaneio||"não identificado"}</strong>: NF ausente ou inválida</li>)}</ul>
+            <label className="flex items-start gap-2"><input type="checkbox" checked={cientePendencias} onChange={e=>setCientePendencias(e.target.checked)} className="mt-1"/><span>Estou ciente dessas pendências e vou conferir as NFs no GreenMile antes de registrar a conferência da prestação.</span></label>
+          </div>}
           <div className="max-h-48 overflow-auto rounded-md border border-border">
             <table className="w-full text-left text-xs"><thead><tr><th className="p-2">Romaneio oficial</th><th className="p-2">D0</th><th className="p-2">Rota</th></tr></thead><tbody>{preparacao?.candidatos.map(c=><tr key={c.romaneio+"|"+c.rota} className="border-t border-border"><td className="p-2 font-mono">{c.romaneio}</td><td className="p-2">{c.d0}</td><td className="p-2">{c.rota}</td></tr>)}</tbody></table>
           </div>
           <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar e abrir prestações"}</button>
           {feedback && <p role="status" className="text-sm text-emerald-500">{feedback}</p>}
-          <p className="text-xs text-muted-foreground">Somente romaneios fiscais candidatos, com data D0 válida e conciliação sem erros, podem entrar na fila. A confirmação é obrigatória e a gravação usa uma operação única no Supabase.</p>
+          <p className="text-xs text-muted-foreground">Somente romaneios fiscais candidatos com D0 válido e sem divergências estruturais podem entrar na fila. NFs ausentes geram pendências explícitas e exigem ciência do operador; abrir a fila não significa conferir a documentação. A confirmação é obrigatória e a gravação usa uma operação única no Supabase.</p>
         </section>
       </div>}
     </div>
