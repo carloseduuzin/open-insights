@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/layout/AppShell";
-import { lerCSV, conciliarStopViews, type Linha } from "@/lib/greenmile-import";
+import { lerCSV, conciliarStopViews, prepararPrestacoesGM, type Linha } from "@/lib/greenmile-import";
+import { requireSupabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/importacao")({ component: Importacao });
 type Arquivo = { nome: string; linhas: Linha[]; colunas: string[] };
@@ -18,6 +19,8 @@ function Importacao() {
   const [processando, setProcessando] = useState(false);
   const [filtroRota, setFiltroRota] = useState("");
   const [mostrarAlertas, setMostrarAlertas] = useState(true);
+  const [gravando,setGravando] = useState(false);
+  const [feedback,setFeedback] = useState("");
 
   const auditoria = useMemo(() => {
     if (!paradas || !pedidos) return null;
@@ -111,6 +114,30 @@ function Importacao() {
     } catch (e) { setErro(e instanceof Error ? e.message : "Erro ao ler CSV"); }
     finally { setProcessando(false); }
   }
+  const preparacao = useMemo(() => {
+    if (!paradas || !pedidos) return null;
+    const linhas = paradas.linhas.filter(l=>l["Organização"]?.trim()==="RENOVELOG-ZL");
+    const ids = new Set(linhas.map(l=>l["id"]));
+    return prepararPrestacoesGM(linhas,pedidos.linhas.filter(l=>ids.has(l["id"])));
+  },[paradas,pedidos]);
+  const hoje = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  const futuras = preparacao?.candidatos.filter(c=>c.d0>hoje).length ?? 0;
+  const permitido = !!preparacao && !preparacao.bloqueado && futuras===0 && preparacao.candidatos.length>0;
+  async function gravarPrestacoes() {
+    if (!permitido || !preparacao || gravando) return;
+    const confirmado = window.confirm(`CONFIRMAR abertura da fila de prestação para ${preparacao.candidatos.length} romaneios fiscais oficiais? A gravação é real, não muda prestações já cadastradas, e romaneios auxiliares são excluídos.`);
+    if (!confirmado) return;
+    setGravando(true);setFeedback("");setErro("");
+    try {
+      const itens=preparacao.candidatos.map(c=>({romaneio:c.romaneio,d0:c.d0}));
+      const {data,error} = await requireSupabase().rpc("sigo_importar_prestacoes_gm",{p_itens:itens});
+      if(error) throw error;
+      const resultado=Array.isArray(data)?data[0]:data;
+      if (!resultado) throw new Error("Banco não confirmou a importação");
+      setFeedback(`Importação confirmada: ${resultado.inseridos} prestação(ões) aberta(s), ${resultado.existentes} já existente(s). Confira em Prestação de Contas.`);
+    }catch(e){setErro(e instanceof Error?e.message:"Falha na gravação.");}
+    finally{setGravando(false);}
+  }
   const rotasFiltradas = auditoria?.rotas.filter(r => `${r.codigo} ${r.romaneio} ${r.motorista}`.toLowerCase().includes(filtroRota.toLowerCase())) ?? [];
   return <AppShell titulo="Importação GreenMile" descricao="Auditoria dos CSV antes de gravar no banco">
     <div className="space-y-5">
@@ -168,7 +195,18 @@ function Importacao() {
             {auditoria.alertas.length > 200 && <p className="text-xs text-muted-foreground">Exibindo os primeiros 200 alertas.</p>}
           </div> : <p className="text-sm text-muted-foreground">Nenhum alerta detectado pelas regras atuais. Isso não substitui auditoria fiscal.</p>)}
         </section>
-        <p className="rounded-md border border-border bg-muted p-3 text-sm"><strong>Modo seguro:</strong> nenhum arquivo foi persistido no Supabase. A gravação de rotas permanece indisponível até definirmos validação de importação repetida, responsabilidade fiscal/operacional, permissões e trilha de auditoria.</p>
+        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+          <h2 className="font-semibold">Abrir fila de prestação a partir do GreenMile</h2>
+          <p className="text-sm text-muted-foreground">Prévia: <strong>{preparacao?.candidatos.length??0} romaneios oficiais candidatos</strong>, {preparacao?.auxiliares??0} rotas auxiliares excluídas. A importação cria somente prestações ainda inexistentes; nunca apaga, reinicia ou reabre romaneios baixados. Não grava rotas, paradas nem NFs.</p>
+          {futuras>0 && <p className="rounded-md border border-amber-500/40 p-3 text-sm text-amber-500">{futuras} rota(s) com D0 no futuro. Aguarde a data da rota para abrir a prestação; hoje nenhum dado será gravado.</p>}
+          {!!preparacao?.avisos.length && <p className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Importação bloqueada: {preparacao.avisos.length} ocorrência(s) de conciliação ou romaneio. Revise os arquivos antes de gravar.</p>}
+          <div className="max-h-48 overflow-auto rounded-md border border-border">
+            <table className="w-full text-left text-xs"><thead><tr><th className="p-2">Romaneio oficial</th><th className="p-2">D0</th><th className="p-2">Rota</th></tr></thead><tbody>{preparacao?.candidatos.map(c=><tr key={c.romaneio+"|"+c.rota} className="border-t border-border"><td className="p-2 font-mono">{c.romaneio}</td><td className="p-2">{c.d0}</td><td className="p-2">{c.rota}</td></tr>)}</tbody></table>
+          </div>
+          <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar e abrir prestações"}</button>
+          {feedback && <p role="status" className="text-sm text-emerald-500">{feedback}</p>}
+          <p className="text-xs text-muted-foreground">Somente romaneios fiscais candidatos, com data D0 válida e conciliação sem erros, podem entrar na fila. A confirmação é obrigatória e a gravação usa uma operação única no Supabase.</p>
+        </section>
       </div>}
     </div>
   </AppShell>;
