@@ -114,7 +114,7 @@ function Prestacao() {
         <p className="text-xs text-muted-foreground">Cadastro manual controlado para o piloto. Confira o romaneio de origem e a data D0 no GreenMile. Romaneios auxiliares não devem ser cadastrados como prestação fiscal.</p>
         <form onSubmit={e=>void criarPrestacao(e)} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
           <label className="space-y-1 text-sm">Romaneio oficial (12 dígitos)<input required maxLength={12} pattern="[0-9]{12}" value={novoRomaneio} onChange={e=>setNovoRomaneio(e.target.value.replace(/\\D/g,"").slice(0,12))} className="w-full rounded-md border border-input bg-background px-3 py-2" placeholder="000000000000" disabled={criando}/></label>
-          <label className="space-y-1 text-sm">Data da rota (D0)<input required type="date" max={hoje} value={novaData} onChange={e=>setNovaData(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2" disabled={demo || criando}/></label>
+          <label className="space-y-1 text-sm">Data da rota (D0)<input required type="date" max={hoje} value={novaData} onChange={e=>setNovaData(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2" disabled={criando}/></label>
           <button type="submit" disabled={criando || novoRomaneio.length!==12 || !novaData} className="rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-40">{criando?"Registrando...":"Cadastrar"}</button>
         </form>
           </section>
@@ -142,7 +142,7 @@ function Prestacao() {
               </td>
             </tr>)}</tbody>
           </table></div>}
-        <p className="text-xs text-muted-foreground">Fluxo obrigatório: Aberta → Retornada → Conferida → Enviada JTI (baixa). O servidor registra usuário e horário em cada etapa; a demonstração nunca grava dados.</p>
+        <p className="text-xs text-muted-foreground">Fluxo obrigatório: Aberta → Retornada → Conferida → Enviada JTI (baixa). O servidor registra usuário e horário em cada etapa; a fila apresenta somente registros persistidos no Supabase.</p>
       </section>
     </div>
   </AppShell>;
