@@ -127,7 +127,7 @@ export function prepararPrestacoesGM(paradas: Linha[], pedidos: Linha[]) {
     const tipo = classificarRomaneio(romaneio);
     if (tipo === "AUXILIAR") { auxiliares++; continue; }
     if (tipo === "INVALIDO") { avisos.push(`Rota ${grupo.codigo}: romaneio inválido`); continue; }
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(grupo.data)) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(grupo.data)) {
       avisos.push(`Rota ${grupo.codigo}: D0 inválido`);
       continue;
     }
