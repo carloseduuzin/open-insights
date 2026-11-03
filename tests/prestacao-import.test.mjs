@@ -29,7 +29,17 @@ test("bloqueia ambiguidade de romaneios na mesma rota", () => {
   assert.equal(r.bloqueado,true);
   assert.equal(r.candidatos.length,0);
 });
-test("bloqueia NF sem vínculo válido", () => {
+test("NF ausente vira pendência explícita, sem impedir abertura da fila", () => {
   const r=prepararPrestacoesGM([parada("1","R1","601615021154")],[pedido("1","R1","")]);
+  assert.equal(r.bloqueado,false);
+  assert.equal(r.candidatos.length,1);
+  assert.equal(r.pendenciasNF.length,1);
+  assert.equal(r.pendenciasNF[0].idParada,"1");
+  assert.equal(r.pendenciasNF[0].rota,"R1");
+});
+
+test("bloqueia divergência de rota/data apesar da NF válida", () => {
+  const r=prepararPrestacoesGM([parada("1","R1","601615021154")],[pedido("1","R2")]);
   assert.equal(r.bloqueado,true);
+  assert.equal(r.avisos.some(x=>x.includes("Divergência rota/data")),true);
 });
