@@ -13,12 +13,6 @@ const statusTexto: Record<PrestacaoRegistro["status"],string> = {
   ABERTA: "Aberta", RETORNADA: "Retornada à base", CONFERIDA: "Conferida",
   ENVIADA_JTI: "Enviada à JTI", CONFIRMADA_JTI: "Confirmada JTI",
 };
-const amostra: PrestacaoRegistro[] = [
-  { id:"exemplo1",romaneio_oficial:"123456789012",d0:"2026-10-27",status:"ABERTA",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
-  { id:"exemplo2",romaneio_oficial:"234567890123",d0:"2026-10-29",status:"CONFERIDA",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
-  { id:"exemplo3",romaneio_oficial:"345678901234",d0:"2026-10-31",status:"ENVIADA_JTI",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
-  { id:"exemplo4",romaneio_oficial:"456789012345",d0:"2026-11-02",status:"CONFIRMADA_JTI",responsavel_id:null,retornada_em:null,conferida_em:null,enviada_em:null,confirmada_em:null },
-];
 function dataLocalHoje(): string {
   const agora = new Date();
   const partes = new Intl.DateTimeFormat("en-CA", { timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit" }).formatToParts(agora);
@@ -29,7 +23,6 @@ function Prestacao() {
   const [registros,setRegistros] = useState<PrestacaoRegistro[]>([]);
   const [carregando,setCarregando] = useState(true);
   const [erro,setErro] = useState("");
-  const [demo,setDemo] = useState(false);
   const [busca,setBusca] = useState("");
   const [filtro,setFiltro] = useState("ATIVAS");
   const [baixando,setBaixando] = useState<string | null>(null);
@@ -49,7 +42,7 @@ function Prestacao() {
   }
   useEffect(()=>{void carregar();},[]);
   async function avancar(item: PrestacaoRegistro) {
-    if (demo || baixando) return;
+    if (baixando) return;
     const etapa = item.status === "ABERTA" ? "RETORNADA" : item.status === "RETORNADA" ? "CONFERIDA" : item.status === "CONFERIDA" ? "ENVIADA_JTI" : null;
     if (!etapa) return;
     const texto = etapa === "RETORNADA" ? "registrar RETORNO À BASE" : etapa === "CONFERIDA" ? "registrar a CONFERÊNCIA" : "DAR BAIXA como ENVIADA À JTI";
@@ -73,7 +66,7 @@ function Prestacao() {
   }
   async function criarPrestacao(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (demo || criando || !/^\\d{12}$/.test(novoRomaneio) || !novaData) return;
+    if (criando || !/^\\d{12}$/.test(novoRomaneio) || !novaData) return;
     if (!window.confirm(`Cadastrar romaneio oficial ${novoRomaneio}, D0 ${novaData}? Confirme os dados no GreenMile antes de prosseguir.`)) return;
     setCriando(true);
     setErro("");
@@ -89,7 +82,7 @@ function Prestacao() {
     } catch(e) {setErro(e instanceof Error?e.message:"Erro ao cadastrar prestação.");}
     finally {setCriando(false);}
   }
-  const lista = useMemo(()=> (demo?amostra:registros).map(r=>({...r,crit:criticidadePrestacao(r,hoje)})),[demo,registros,hoje]);
+  const lista = useMemo(()=> registros.map(r=>({...r,crit:criticidadePrestacao(r,hoje)})),[registros,hoje]);
   const contagens = {
     total:lista.filter(r=>r.crit.nivel!=="CONCLUIDA").length,
     criticos:lista.filter(r=>r.crit.nivel==="CRITICO").length,
@@ -109,10 +102,8 @@ function Prestacao() {
           <div><h2 className="font-semibold">Fila de prestação JTI</h2><p className="mt-1 text-sm text-muted-foreground">D0 = data da rota GreenMile. Vencimento D+3 em dias corridos, com meta interna de 48 horas.</p></div>
           <button type="button" onClick={()=>void carregar()} className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted">Atualizar consulta</button>
         </div>
-        <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)} />Exibir demonstração com registros fictícios (não salvos)</label>
-        {demo && <p role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-medium">MODO DEMONSTRAÇÃO — dados fictícios, sem relação com a operação real. Nenhuma alteração no Supabase.</p>}
-        {sucesso && !demo && <p role="status" className="rounded-lg border border-emerald-500/30 p-3 text-sm text-emerald-500">{sucesso}</p>}
-        {!demo && erro && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">Falha ao consultar: {erro}</p>}
+        {sucesso && <p role="status" className="rounded-lg border border-emerald-500/30 p-3 text-sm text-emerald-500">{sucesso}</p>}
+        {erro && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">Falha ao consultar: {erro}</p>}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           {([["Pendências ativas",contagens.total],["Críticos D+4",contagens.criticos],["Urgentes D+3",contagens.urgentes],["Alerta D+2",contagens.alertas],["Baixadas",contagens.concluidas]] as const).map(([nome,numero])=><div key={nome} className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">{nome}</p><p className="mt-1 text-2xl font-semibold">{numero.toLocaleString("pt-BR")}</p></div>)}
         </div>
@@ -122,12 +113,11 @@ function Prestacao() {
         <h2 className="font-semibold">Cadastrar prestação por romaneio oficial</h2>
         <p className="text-xs text-muted-foreground">Cadastro manual controlado para o piloto. Confira o romaneio de origem e a data D0 no GreenMile. Romaneios auxiliares não devem ser cadastrados como prestação fiscal.</p>
         <form onSubmit={e=>void criarPrestacao(e)} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-          <label className="space-y-1 text-sm">Romaneio oficial (12 dígitos)<input required maxLength={12} pattern="[0-9]{12}" value={novoRomaneio} onChange={e=>setNovoRomaneio(e.target.value.replace(/\\D/g,"").slice(0,12))} className="w-full rounded-md border border-input bg-background px-3 py-2" placeholder="000000000000" disabled={demo || criando}/></label>
+          <label className="space-y-1 text-sm">Romaneio oficial (12 dígitos)<input required maxLength={12} pattern="[0-9]{12}" value={novoRomaneio} onChange={e=>setNovoRomaneio(e.target.value.replace(/\\D/g,"").slice(0,12))} className="w-full rounded-md border border-input bg-background px-3 py-2" placeholder="000000000000" disabled={criando}/></label>
           <label className="space-y-1 text-sm">Data da rota (D0)<input required type="date" max={hoje} value={novaData} onChange={e=>setNovaData(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2" disabled={demo || criando}/></label>
-          <button type="submit" disabled={demo || criando || novoRomaneio.length!==12 || !novaData} className="rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-40">{criando?"Registrando...":"Cadastrar"}</button>
+          <button type="submit" disabled={criando || novoRomaneio.length!==12 || !novaData} className="rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-40">{criando?"Registrando...":"Cadastrar"}</button>
         </form>
-        {demo && <p className="text-xs text-amber-500">Desative a demonstração para cadastrar. Não use dados reais apenas para testar o botão.</p>}
-      </section>
+          </section>
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div className="flex flex-wrap gap-3">
           <input aria-label="Buscar romaneio" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Localizar romaneio (12 dígitos)" className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm" />
@@ -135,7 +125,7 @@ function Prestacao() {
             <option value="ATIVAS">Pendências ativas</option><option value="TODAS">Todas (inclui histórico)</option><option value="CRITICO">Críticas</option><option value="URGENTE">Urgentes</option><option value="ALERTA">Alertas</option><option value="NO_PRAZO">No prazo</option><option value="CONCLUIDA">Baixadas / histórico</option><option value="FUTURA">Futuras</option>
           </select>
         </div>
-        {!demo && carregando ? <p className="text-sm text-muted-foreground">Consultando Supabase...</p> : visiveis.length===0 ? <p className="rounded-lg bg-muted p-5 text-sm text-muted-foreground">{erro && !demo?"Não foi possível carregar os dados.":"Nenhuma prestação encontrada para este filtro. A importação GreenMile ainda não gera prestações automaticamente."}</p> :
+        {carregando ? <p className="text-sm text-muted-foreground">Consultando Supabase...</p> : visiveis.length===0 ? <p className="rounded-lg bg-muted p-5 text-sm text-muted-foreground">{erro?"Não foi possível carregar os dados.":"Nenhuma prestação encontrada para este filtro. Nenhuma prestação encontrada. Importe arquivos GreenMile revisados ou cadastre um romaneio oficial."}</p> :
           <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm">
             <thead className="border-b border-border text-muted-foreground"><tr>{["Romaneio oficial","Data da rota (D0)","Vencimento (D+3)","Dias","Etapa","Criticidade","Responsável","Próxima ação"].map(t=><th key={t} className="px-3 py-3 font-medium">{t}</th>)}</tr></thead>
             <tbody>{visiveis.map(r=><tr key={r.id} className="border-b border-border/60">
@@ -144,11 +134,11 @@ function Prestacao() {
               <td className={`px-3 py-3 font-medium ${tom[r.crit.nivel]??""}`}>{r.crit.rotulo}</td>
               <td className="px-3 py-3">{r.responsavel_id?"ID cadastrado":"Não definido"}</td>
               <td className="px-3 py-3">
-                {!demo && (r.status === "ABERTA" || r.status === "RETORNADA" || r.status === "CONFERIDA") ?
+                {(r.status === "ABERTA" || r.status === "RETORNADA" || r.status === "CONFERIDA") ?
                   <button type="button" disabled={!!baixando || carregando} onClick={()=>void avancar(r)} className="whitespace-nowrap rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">{baixando===r.id ? "Registrando..." : r.status === "ABERTA" ? "Registrar retorno" : r.status === "RETORNADA" ? "Conferir prestação" : "Dar baixa — Enviado à JTI"}</button> :
                   r.status === "ENVIADA_JTI" || r.status === "CONFIRMADA_JTI" ?
                     <span className="text-xs text-emerald-500">Baixada {r.enviada_em?new Date(r.enviada_em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):""}</span> :
-                    <span className="text-xs text-muted-foreground">{demo?"Simulação — sem ações": "Aguardando conferência"}</span>}
+                    <span className="text-xs text-muted-foreground">"Aguardando conferência"</span>}
               </td>
             </tr>)}</tbody>
           </table></div>}
