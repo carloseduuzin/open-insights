@@ -104,7 +104,16 @@ export function conciliarStopViews(paradas: Linha[], pedidos: Linha[]) {
  */
 export function prepararPrestacoesGM(paradas: Linha[], pedidos: Linha[]) {
   const conciliacao = conciliarStopViews(paradas, pedidos);
-  const avisos = [...conciliacao.erros];
+  // A NF ausente exige conferência, mas não impede abrir a fila do romaneio.
+  // Erros estruturais de vínculo entre rota e parada continuam bloqueantes.
+  const bloqueios = conciliacao.erros.filter(erro => !erro.startsWith("NF ausente ou inválida na parada "));
+  const pendenciasNF = conciliacao.erros.filter(erro => erro.startsWith("NF ausente ou inválida na parada ")).map(erro => {
+    const id = erro.replace("NF ausente ou inválida na parada ", "");
+    const parada = paradas.find(p => p["id"] === id);
+    return { idParada: id, rota: (parada?.["Código da rota"] ?? "").trim(),
+      romaneio: (parada?.["Descrição da rota"] ?? "").trim(), descricao: erro };
+  });
+  const avisos = [...bloqueios];
   const agrupadas = new Map<string, { data: string; codigo: string; romaneios: Set<string>; quantidade: number }>();
   for (const parada of paradas) {
     const data = (parada["Data da Rota"] ?? "").slice(0, 10);
@@ -140,5 +149,5 @@ export function prepararPrestacoesGM(paradas: Linha[], pedidos: Linha[]) {
     vistos.add(c.romaneio);
   }
   if (repetidos.size) avisos.push(`${repetidos.size} romaneio(s) associado(s) a múltiplas rotas`);
-  return { candidatos, auxiliares, avisos, bloqueado: avisos.length > 0 };
+  return { candidatos, auxiliares, avisos, pendenciasNF, bloqueado: avisos.length > 0 };
 }
