@@ -96,3 +96,49 @@ export function conciliarStopViews(paradas: Linha[], pedidos: Linha[]) {
   for (const id of porId.keys()) if (!vistos.has(id)) erros.push(`Parada sem pedido: ${id}`);
   return { vinculos, erros, totalParadas: porId.size, totalPedidos: pedidos.length };
 }
+
+/**
+ * Staging para prestação: somente romaneios oficiais candidatos, vinculados
+ * a exatamente uma rota e uma data. Nunca cria prestação de romaneio auxiliar.
+ * O operador deve revisar e confirmar antes de gravar.
+ */
+export function prepararPrestacoesGM(paradas: Linha[], pedidos: Linha[]) {
+  const conciliacao = conciliarStopViews(paradas, pedidos);
+  const avisos = [...conciliacao.erros];
+  const agrupadas = new Map<string, { data: string; codigo: string; romaneios: Set<string>; quantidade: number }>();
+  for (const parada of paradas) {
+    const data = (parada["Data da Rota"] ?? "").slice(0, 10);
+    const codigo = (parada["Código da rota"] ?? "").trim();
+    const romaneio = (parada["Descrição da rota"] ?? "").trim();
+    const chave = `${data}|${codigo}`;
+    const grupo = agrupadas.get(chave) ?? { data, codigo, romaneios: new Set<string>(), quantidade: 0 };
+    grupo.romaneios.add(romaneio);
+    grupo.quantidade++;
+    agrupadas.set(chave, grupo);
+  }
+  const candidatos: { romaneio: string; d0: string; rota: string; paradas: number }[] = [];
+  let auxiliares = 0;
+  for (const grupo of agrupadas.values()) {
+    if (grupo.romaneios.size !== 1) {
+      avisos.push(`Rota ${grupo.codigo} apresenta descrições de romaneio distintas`);
+      continue;
+    }
+    const romaneio = [...grupo.romaneios][0] ?? "";
+    const tipo = classificarRomaneio(romaneio);
+    if (tipo === "AUXILIAR") { auxiliares++; continue; }
+    if (tipo === "INVALIDO") { avisos.push(`Rota ${grupo.codigo}: romaneio inválido`); continue; }
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(grupo.data)) {
+      avisos.push(`Rota ${grupo.codigo}: D0 inválido`);
+      continue;
+    }
+    candidatos.push({ romaneio, d0: grupo.data, rota: grupo.codigo, paradas: grupo.quantidade });
+  }
+  const repetidos = new Set<string>();
+  const vistos = new Set<string>();
+  for (const c of candidatos) {
+    if (vistos.has(c.romaneio)) repetidos.add(c.romaneio);
+    vistos.add(c.romaneio);
+  }
+  if (repetidos.size) avisos.push(`${repetidos.size} romaneio(s) associado(s) a múltiplas rotas`);
+  return { candidatos, auxiliares, avisos, bloqueado: avisos.length > 0 };
+}
