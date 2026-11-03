@@ -138,7 +138,7 @@ function Prestacao() {
                   <button type="button" disabled={!!baixando || carregando} onClick={()=>void avancar(r)} className="whitespace-nowrap rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">{baixando===r.id ? "Registrando..." : r.status === "ABERTA" ? "Registrar retorno" : r.status === "RETORNADA" ? "Conferir prestação" : "Dar baixa — Enviado à JTI"}</button> :
                   r.status === "ENVIADA_JTI" || r.status === "CONFIRMADA_JTI" ?
                     <span className="text-xs text-emerald-500">Baixada {r.enviada_em?new Date(r.enviada_em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):""}</span> :
-                    <span className="text-xs text-muted-foreground">"Aguardando conferência"</span>}
+                    <span className="text-xs text-muted-foreground">Aguardando conferência</span>}
               </td>
             </tr>)}</tbody>
           </table></div>}
