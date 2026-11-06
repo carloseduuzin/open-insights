@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/layout/AppShell";
 import { lerCSV, conciliarStopViews, prepararPrestacoesGM, type Linha } from "@/lib/greenmile-import";
 import { requireSupabase } from "@/lib/supabase";
@@ -21,6 +21,7 @@ function Importacao() {
   const [mostrarAlertas, setMostrarAlertas] = useState(true);
   const [gravando,setGravando] = useState(false);
   const [feedback,setFeedback] = useState("");
+  const [importacaoConfirmada,setImportacaoConfirmada] = useState(false);
   const [cientePendencias,setCientePendencias] = useState(false);
 
   const auditoria = useMemo(() => {
@@ -100,7 +101,7 @@ function Importacao() {
 
   async function lerArquivo(file: File | undefined, tipo: "paradas" | "pedidos") {
     if (!file) return;
-    setProcessando(true); setErro(""); setCientePendencias(false);
+    setProcessando(true); setErro(""); setCientePendencias(false); setFeedback(""); setImportacaoConfirmada(false);
     try {
       if (file.size > 35 * 1024 * 1024) throw new Error("Arquivo acima de 35 MB. Divida a exportação por período.");
       const csv = lerCSV(await file.text());
@@ -136,6 +137,7 @@ function Importacao() {
       const resultado=Array.isArray(data)?data[0]:data;
       if (!resultado) throw new Error("Banco não confirmou a importação");
       setFeedback(`Importação confirmada: ${resultado.inseridos} prestação(ões) aberta(s), ${resultado.existentes} já existente(s). Confira em Prestação de Contas.`);
+      setImportacaoConfirmada(true);
     }catch(e){setErro(e instanceof Error?e.message:"Falha na gravação.");}
     finally{setGravando(false);}
   }
@@ -210,8 +212,15 @@ function Importacao() {
           <div className="max-h-48 overflow-auto rounded-md border border-border">
             <table className="w-full text-left text-xs"><thead><tr><th className="p-2">Romaneio oficial</th><th className="p-2">D0</th><th className="p-2">Rota</th></tr></thead><tbody>{preparacao?.candidatos.map(c=><tr key={c.romaneio+"|"+c.rota} className="border-t border-border"><td className="p-2 font-mono">{c.romaneio}</td><td className="p-2">{c.d0}</td><td className="p-2">{c.rota}</td></tr>)}</tbody></table>
           </div>
-          <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar e abrir prestações"}</button>
-          {feedback && <p role="status" className="text-sm text-emerald-500">{feedback}</p>}
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar e abrir prestações"}</button>
+            <Link to="/prestacao" className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Ver acompanhamento atual</Link>
+          </div>
+          {!!preparacao?.pendenciasNF.length && !cientePendencias && !preparacao.bloqueado && <p className="text-sm text-amber-500">Para habilitar a importação, leia e marque a confirmação de ciência das pendências fiscais.</p>}
+          {feedback && <div role="status" className="space-y-3 rounded-md border border-emerald-500/40 p-3 text-sm text-emerald-500">
+            <p>{feedback}</p>
+            {importacaoConfirmada && <Link to="/prestacao" className="inline-flex rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground">Ir para acompanhamento de prestações</Link>}
+          </div>}
           <p className="text-xs text-muted-foreground">Somente romaneios fiscais candidatos com D0 válido e sem divergências estruturais podem entrar na fila. NFs ausentes geram pendências explícitas e exigem ciência do operador; abrir a fila não significa conferir a documentação. A confirmação é obrigatória e a gravação usa uma operação única no Supabase.</p>
         </section>
       </div>}
