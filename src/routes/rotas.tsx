@@ -12,7 +12,7 @@ type Arquivo = { nome: string; linhas: Linha[] };
 type MotoristaDia = {
   chave: string; dia: string; nome: string; rotas: string[]; planejado: number;
   realizadoGM: number; kmSuspeitos: string[]; varejo: number; grocery: number;
-  semCategoria: number; insucessos: number; pdvs: number; potencial: number;
+  semCategoria: number; insucessos: number; pdvs: number; potencial: number; groceryPorTempo: number; divergenciasCategoria: number;
 };
 const real = (v: string) => {
   const n = Number((v ?? "").trim().replace(",", "."));
@@ -23,7 +23,7 @@ const km = (n:number) => n.toLocaleString("pt-BR",{minimumFractionDigits:1,maxim
 const formatado = (dia:string) => dia.split("-").reverse().join("/");
 const campo = "rounded-md border border-input bg-background px-3 py-2 text-sm";
 const requisitosRoute = ["Código","Descrição","Distância planejada","Distância realizada","Motoristas","Saída planejada"];
-const requisitosStop = ["Código da rota","Código da Localidade","Instruções de localização","Motivo de Entrega s/ Sucesso","Data da Rota","Organização"];
+const requisitosStop = ["Código da rota","Código da Localidade","Instruções de localização","Motivo de Entrega s/ Sucesso","Tempo de Atendimento Planejado","Data da Rota","Organização"];
 const nomeNormalizado = (s:string) => s.trim().replace(/\s+/g," ").toUpperCase();
 const isMoto = (codigo:string) => /^SP-[12]MFV/i.test(codigo);
 const dateRoute = (r:Linha) => (r["Saída planejada"] || "").slice(0,10);
@@ -69,7 +69,7 @@ function Rotas() {
       const grupo=stopPorRota.get(chave)??[];
       grupo.push(parada);stopPorRota.set(chave,grupo);
     }
-    const agrupado=new Map<string,{dia:string;nome:string;rotas:string[];planejado:number;realizadoGM:number;kmSuspeitos:string[];pdvs:Map<string,{tipo:string;insucesso:boolean}>;insucessos:number;semCategoria:number}>();
+    const agrupado=new Map<string,{dia:string;nome:string;rotas:string[];planejado:number;realizadoGM:number;kmSuspeitos:string[];pdvs:Map<string,{tipo:string;insucesso:boolean;porTempo:boolean;divergente:boolean}>;insucessos:number;semCategoria:number}>();
     for(const r of rotas){
       const dia=dateRoute(r); const nome=nomeNormalizado(r["Motoristas"]??"");
       const chave=dia+"|"+nome; const codigo=(r["Código"]??"").trim();
@@ -82,14 +82,17 @@ function Rotas() {
       if(!valor || realizado<1) obj.kmSuspeitos.push(codigo);
       for(const s of stopPorRota.get(dia+"|"+codigo)??[]){
         const local=(s["Código da Localidade"]??"").trim();
-        const tipo=(s["Instruções de localização"]??"").trim().toLowerCase();
+        const tipoGM=(s["Instruções de localização"]??"").trim().toLowerCase();
+        const porTempo=real(s["Tempo de Atendimento Planejado"]??"")>=3600;
+        const tipo=porTempo?"grocery":tipoGM;
+        const divergente=porTempo && tipoGM==="varejo";
         const semSucesso=Boolean((s["Motivo de Entrega s/ Sucesso"]??"").trim());
         if(semSucesso)obj.insucessos++;
         if(tipo!=="grocery" && tipo!=="varejo")obj.semCategoria++;
         if(!local || (tipo!=="grocery" && tipo!=="varejo") || semSucesso)continue;
         const pdv=obj.pdvs.get(local);
-        if(!pdv)obj.pdvs.set(local,{tipo,insucesso:false});
-        else if(tipo==="grocery")pdv.tipo="grocery";
+        if(!pdv)obj.pdvs.set(local,{tipo,insucesso:false,porTempo,divergente});
+        else { if(tipo==="grocery")pdv.tipo="grocery"; pdv.porTempo ||= porTempo; pdv.divergente ||= divergente; }
       }
       agrupado.set(chave,obj);
     }
@@ -97,9 +100,11 @@ function Rotas() {
       const pdvs=[...v.pdvs.values()];
       const grocery=pdvs.filter(p=>p.tipo==="grocery").length;
       const varejo=pdvs.filter(p=>p.tipo==="varejo").length;
+      const groceryPorTempo=pdvs.filter(p=>p.porTempo).length;
+      const divergenciasCategoria=pdvs.filter(p=>p.divergente).length;
       return {chave,dia:v.dia,nome:v.nome,rotas:v.rotas,planejado:v.planejado,realizadoGM:v.realizadoGM,
         kmSuspeitos:v.kmSuspeitos,varejo,grocery,pdvs:pdvs.length,semCategoria:v.semCategoria,
-        insucessos:v.insucessos,potencial:varejo*7+grocery*35};
+        insucessos:v.insucessos,potencial:varejo*7+grocery*35,groceryPorTempo,divergenciasCategoria};
     });
     pessoas.sort((a,b)=>b.planejado-a.planejado);
     return {datas,pessoas,rotas:rotas.length,paradas:sv.linhas.length};
@@ -119,17 +124,18 @@ function Rotas() {
   const previsto=visiveis.reduce((s,p)=>s+p.planejado,0);
   const potenciais=visiveis.reduce((s,p)=>s+p.potencial,0);
   const excedentes=visiveis.filter(p=>p.planejado>150).length;
+  const divergenciasCategoria=visiveis.reduce((s,p)=>s+p.divergenciasCategoria,0);
   function marcar(chave:string,campo:"inicio"|"fim",valor:string){
     if(valor!=="" && (!/^\d+(\.\d{0,2})?$/.test(valor) || Number(valor)>9999999))return;
     setOdometros(a=>({...a,[chave]:{inicio:a[chave]?.inicio??"",fim:a[chave]?.fim??"",[campo]:valor}}));
   }
   function exportar(){
-    const colunas=["Data","Motociclista","Rotas","KM planejado","KM GreenMile","KM fisico validado","Varejos candidatos","Grocery candidatos","Insucessos no arquivo","Valor potencial R$","Observacoes"];
+    const colunas=["Data","Motociclista","Rotas","KM planejado","KM GreenMile","KM fisico validado","Varejos candidatos","Grocery candidatos","Grocery por tempo >= 3600s","Divergências tempo vs GM","Insucessos no arquivo","Valor potencial R$","Observacoes"];
     const linhas=visiveis.map(p=>{
       const o=odometros[p.chave];
       const medido=o?.inicio!=="" && o?.fim!=="" && o && Number(o.fim)>=Number(o.inicio) ? (Number(o.fim)-Number(o.inicio)).toFixed(2) : "";
       return [p.dia,p.nome,p.rotas.join(" / "),p.planejado.toFixed(3),p.realizadoGM.toFixed(3),medido,
-        String(p.varejo),String(p.grocery),String(p.insucessos),p.potencial.toFixed(2),p.kmSuspeitos.length?"KM GM incompleto: "+p.kmSuspeitos.join(", "):""];
+        String(p.varejo),String(p.grocery),String(p.groceryPorTempo),String(p.divergenciasCategoria),String(p.insucessos),p.potencial.toFixed(2),p.kmSuspeitos.length?"KM GM incompleto: "+p.kmSuspeitos.join(", "):""];
     });
     const csv=[colunas,...linhas].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\r\n");
     const blob=new Blob(["\uFEFF",csv],{type:"text/csv;charset=utf-8"});
@@ -171,11 +177,12 @@ function Rotas() {
               ["KM planejado",km(previsto)],
               ["Planejados acima 150 km",excedentes],
               ["Pagamento potencial",dinheiro(potenciais)],
+              ["Divergências Grocery / GM",divergenciasCategoria],
             ].map(([titulo,valor])=><div className="rounded-md bg-muted p-3" key={titulo}>
               <p className="text-xs text-muted-foreground">{titulo}</p><p className="mt-1 text-xl font-semibold">{valor}</p>
             </div>)}
           </div>
-          <p className="text-xs text-amber-500">Os valores de R$ 7 (Varejo) e R$ 35 (Grocery) são simulações de pagamento por PDV distinto do mesmo condutor no dia. NF sem motivo de insucesso não comprova entrega. Não usar para folha ou faturamento sem conferência dos canhotos/status e regras contratuais.</p>
+          <p className="text-xs text-amber-500">Os valores de R$ 7 (Varejo) e R$ 35 (Grocery) são simulações de pagamento por PDV distinto do mesmo condutor no dia. Tempo de atendimento planejado a partir de 3.600 segundos indica Grocery candidato; divergências com a etiqueta do GreenMile ficam sinalizadas para conferência. NF sem motivo de insucesso não comprova entrega. Não usar para folha ou faturamento sem conferência dos canhotos/status e regras contratuais.</p>
         </section>
         <section className="rounded-xl border border-border bg-card p-5 space-y-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -207,7 +214,7 @@ function Rotas() {
                     {fisico!==null?<p className="mt-1 font-semibold">{km(fisico)} <span className="text-xs text-muted-foreground">({variacao!==null&&variacao>=0?"+":""}{km(variacao??0)} vs. JTI)</span></p>:
                      informado?<p className="text-xs text-destructive">Final menor que inicial</p>:<p className="text-xs text-muted-foreground">Não informado</p>}
                   </td>
-                  <td className="px-3 py-3">{p.varejo} varejo • {p.grocery} grocery{p.insucessos>0&&<p className="text-xs text-amber-500">{p.insucessos} paradas com insucesso</p>}{p.semCategoria>0&&<p className="text-xs text-muted-foreground">{p.semCategoria} sem categoria</p>}</td>
+                  <td className="px-3 py-3">{p.varejo} varejo • {p.grocery} grocery{p.groceryPorTempo>0&&<p className="text-xs text-muted-foreground">{p.groceryPorTempo} grocery por tempo >= 1h</p>}{p.divergenciasCategoria>0&&<p className="text-xs text-amber-500">{p.divergenciasCategoria} Varejo no GM, mas 1h+ planejada - conferir</p>}{p.insucessos>0&&<p className="text-xs text-amber-500">{p.insucessos} paradas com insucesso</p>}{p.semCategoria>0&&<p className="text-xs text-muted-foreground">{p.semCategoria} sem categoria</p>}</td>
                   <td className="px-3 py-3 font-semibold">{dinheiro(p.potencial)}<p className="text-xs font-normal text-muted-foreground">Não conferido</p></td>
                   <td className="px-3 py-3"><span className={alerta?"font-semibold text-destructive":"text-muted-foreground"}>{fisico!==null?(alerta?"Acima de 150 km":"Dentro de 150 km"):(p.planejado>150?"Planejamento acima de 150 km":"KM físico pendente")}</span></td>
                 </tr>;
