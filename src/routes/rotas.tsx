@@ -74,7 +74,7 @@ function Rotas() {
       const dia=dateRoute(r); const nome=nomeNormalizado(r["Motoristas"]??"");
       const chave=dia+"|"+nome; const codigo=(r["Código"]??"").trim();
       if(!dia || !nome)continue;
-      const obj=agrupado.get(chave)??{dia,nome,rotas:[],planejado:0,realizadoGM:0,kmSuspeitos:[],pdvs:new Map(),insucessos:0,semCategoria:0};
+      const obj=agrupado.get(chave)??{dia,nome,rotas:[] as string[],planejado:0,realizadoGM:0,kmSuspeitos:[] as string[],pdvs:new Map<string,{tipo:string;insucesso:boolean;porTempo:boolean;divergente:boolean}>(),insucessos:0,semCategoria:0};
       obj.rotas.push(codigo);obj.planejado+=real(r["Distância planejada"]??"");
       const valor=(r["Distância realizada"]??"").trim();
       const realizado=real(valor);
