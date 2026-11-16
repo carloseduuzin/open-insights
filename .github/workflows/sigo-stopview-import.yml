@@ -75,7 +75,24 @@ jobs:
           done
       - name: Run StopView persistence / negative / idempotency SQL tests
         run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-import.sql
+      - name: Prepare separate PostgreSQL database for real fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          createdb sigo_fixture_ci
+          PGDATABASE=sigo_fixture_ci psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA auth;
+          CREATE TABLE auth.users (id uuid PRIMARY KEY, raw_user_meta_data jsonb);
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
+            AS $ SELECT NULLIF(current_setting('sigo.uid', true),'')::uuid $;
+          SQL
+          for migration in supabase/migrations/*.sql; do
+            echo "Applying to isolated fixture DB: $migration"
+            PGDATABASE=sigo_fixture_ci psql -X -v ON_ERROR_STOP=1 -f "$migration"
+          done
       - name: Import real anonymized StopView fixture (fails on missing required coverage)
+        env:
+          PGDATABASE: sigo_fixture_ci
         run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-fixture-real.sql
       - uses: actions/setup-node@v4
         with:
