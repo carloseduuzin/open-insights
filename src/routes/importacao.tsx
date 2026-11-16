@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/layout/AppShell";
-import { lerCSV, conciliarStopViews, prepararPrestacoesGM, type Linha } from "@/lib/greenmile-import";
+import { lerCSV, conciliarStopViews, prepararPrestacoesGM, prepararLinhasStopView, type Linha } from "@/lib/greenmile-import";
 import { requireSupabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/importacao")({ component: Importacao });
-type Arquivo = { nome: string; linhas: Linha[]; colunas: string[] };
+type Arquivo = { nome: string; conteudo: string; linhas: Linha[]; colunas: string[] };
 type DetalheRota = {
   chave: string; codigo: string; data: string; romaneio: string; motorista: string;
   paradas: number; nfs: number; semMotorista: number; auxiliares: number; alertas: number;
@@ -104,14 +104,15 @@ function Importacao() {
     setProcessando(true); setErro(""); setCientePendencias(false); setFeedback(""); setImportacaoConfirmada(false);
     try {
       if (file.size > 35 * 1024 * 1024) throw new Error("Arquivo acima de 35 MB. Divida a exportação por período.");
-      const csv = lerCSV(await file.text());
+      const conteudo = await file.text();
+      const csv = lerCSV(conteudo);
       if (!csv.colunas.includes("id")) throw new Error("Arquivo sem ID da parada.");
       if (tipo === "paradas") {
         if (!["Organização", "Descrição da rota", "Código da rota", "Data da Rota"].every(k => csv.colunas.includes(k))) throw new Error("Selecione o StopView filtrado por Paradas.");
-        setParadas({ nome: file.name, ...csv });
+        setParadas({ nome: file.name, conteudo, ...csv });
       } else {
         if (!["stop.orders.number", "routeView.route.key", "routeView.route.date"].every(k => csv.colunas.includes(k))) throw new Error("Selecione o StopView filtrado por Pedidos e Itens.");
-        setPedidos({ nome: file.name, ...csv });
+        setPedidos({ nome: file.name, conteudo, ...csv });
       }
     } catch (e) { setErro(e instanceof Error ? e.message : "Erro ao ler CSV"); }
     finally { setProcessando(false); }
@@ -122,31 +123,63 @@ function Importacao() {
     const ids = new Set(linhas.map(l=>l["id"]));
     return prepararPrestacoesGM(linhas,pedidos.linhas.filter(l=>ids.has(l["id"])));
   },[paradas,pedidos]);
+  const lotePersistente = useMemo(() => {
+    if (!paradas || !pedidos) return { linhas: [] as Linha[], erro: "" };
+    try {
+      return { linhas: prepararLinhasStopView(paradas, pedidos), erro: "" };
+    } catch (e) {
+      return { linhas: [] as Linha[], erro: e instanceof Error ? e.message : "StopView inválido" };
+    }
+  }, [paradas, pedidos]);
   const hoje = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const futuras = preparacao?.candidatos.filter(c=>c.d0>hoje).length ?? 0;
-  const permitido = !!preparacao && !preparacao.bloqueado && futuras===0 && preparacao.candidatos.length>0 && (preparacao.pendenciasNF.length===0 || cientePendencias);
+  const permitido = !!paradas && !!pedidos && !lotePersistente.erro && lotePersistente.linhas.length>0 && futuras===0 && (!preparacao?.pendenciasNF.length || cientePendencias);
   async function gravarPrestacoes() {
-    if (!permitido || !preparacao || gravando) return;
-    const confirmado = window.confirm(`CONFIRMAR abertura da fila de prestação para ${preparacao.candidatos.length} romaneios fiscais oficiais? A gravação é real, não muda prestações já cadastradas, e romaneios auxiliares são excluídos. Existem ${preparacao.pendenciasNF.length} pendências de NF que deverão ser tratadas antes da conferência/baixa.`);
+    if (!permitido || !paradas || !pedidos || gravando) return;
+    const confirmado = window.confirm(
+      "CONFIRMAR importação persistente de " + lotePersistente.linhas.length +
+      " linha(s) do StopView? Rotas, paradas, NFs, execuções, pendências e prestações serão gravadas em uma transação. A origem fiscal existente não será alterada."
+    );
     if (!confirmado) return;
-    setGravando(true);setFeedback("");setErro("");
+    setGravando(true); setFeedback(""); setErro("");
     try {
-      const itens=preparacao.candidatos.map(c=>({romaneio:c.romaneio,d0:c.d0}));
-      const {data,error} = await requireSupabase().rpc("sigo_importar_prestacoes_gm",{p_itens:itens});
-      if(error) throw error;
-      const resultado=Array.isArray(data)?data[0]:data;
-      if (!resultado) throw new Error("Banco não confirmou a importação");
-      setFeedback(`Importação confirmada: ${resultado.inseridos} prestação(ões) aberta(s), ${resultado.existentes} já existente(s). Confira em Prestação de Contas.`);
+      if (!crypto?.subtle || !crypto.randomUUID) {
+        throw new Error("Identificação SHA-256 indisponível. Abra o SIGO em uma conexão HTTPS.");
+      }
+      // Hash do conteúdo bruto dos dois arquivos, independente do nome do arquivo.
+      const bytes = new TextEncoder().encode(JSON.stringify([paradas.conteudo, pedidos.conteudo]));
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      const sha256 = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2,"0")).join("");
+      const { data, error } = await requireSupabase().rpc("sigo_importar_stopview", {
+        p_importacao_id: crypto.randomUUID(),
+        p_linhas: {
+          sha256,
+          arquivo_nome: paradas.nome + " + " + pedidos.nome,
+          linhas: lotePersistente.linhas,
+        },
+      });
+      if (error) throw error;
+      const resumo = data as {
+        status?: string; prestacoes_novas?: number; notas_novas?: number;
+        execucoes_novas?: number; pendencias_novas?: number;
+      } | null;
+      if (!resumo?.status) throw new Error("Banco não confirmou a importação do StopView.");
+      setFeedback(resumo.status === "JA_IMPORTADO"
+        ? "Este conjunto StopView (mesmo SHA-256) já foi importado. Nenhum registro foi duplicado."
+        : "Importação confirmada: " + (resumo.prestacoes_novas ?? 0) + " prestações, " +
+          (resumo.notas_novas ?? 0) + " NFs, " + (resumo.execucoes_novas ?? 0) +
+          " execuções e " + (resumo.pendencias_novas ?? 0) + " pendências registradas.");
       setImportacaoConfirmada(true);
-    }catch(e){setErro(e instanceof Error?e.message:"Falha na gravação.");}
-    finally{setGravando(false);}
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha na importação do StopView.");
+    } finally { setGravando(false); }
   }
   const rotasFiltradas = auditoria?.rotas.filter(r => `${r.codigo} ${r.romaneio} ${r.motorista}`.toLowerCase().includes(filtroRota.toLowerCase())) ?? [];
-  return <AppShell titulo="Importação GreenMile" descricao="Auditoria dos CSV antes de gravar no banco">
+  return <AppShell titulo="Importação GreenMile" descricao="Conferência e importação persistente dos CSV">
     <div className="space-y-5">
       <div className="rounded-xl border border-border bg-card p-5">
         <h2 className="font-semibold">Conferência dos StopViews</h2>
-        <p className="mt-2 text-sm text-muted-foreground">Selecione os relatórios do mesmo período. A auditoria acontece no navegador e <strong>não grava</strong> dados no Supabase. Informações de rota e NF devem ser conferidas antes de qualquer liberação operacional.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Selecione os relatórios do mesmo período. A prévia é feita no navegador. Após confirmação, a RPC grava os dados no Supabase com histórico, proteção contra duplicidade e pendências de NF. A origem fiscal já cadastrada nunca é alterada.</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block space-y-2 text-sm font-medium">StopView — Paradas
             <input type="file" accept=".csv,text/csv" disabled={processando} onChange={e=>void lerArquivo(e.target.files?.[0],"paradas")} className="block w-full rounded-md border p-2 text-sm" />
@@ -159,6 +192,7 @@ function Importacao() {
         </div>
         {erro && <p role="alert" className="mt-3 text-sm text-destructive">{erro}</p>}
       </div>
+      {lotePersistente.erro && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{lotePersistente.erro}</p>}
       {auditoria && <div className="space-y-5">
         <section className="rounded-xl border border-border bg-card p-5 space-y-4">
           <h2 className="font-semibold">Resumo da auditoria — RENOVELOG-ZL</h2>
@@ -199,13 +233,13 @@ function Importacao() {
           </div> : <p className="text-sm text-muted-foreground">Nenhum alerta detectado pelas regras atuais. Isso não substitui auditoria fiscal.</p>)}
         </section>
         <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="font-semibold">Abrir fila de prestação a partir do GreenMile</h2>
-          <p className="text-sm text-muted-foreground">Prévia: <strong>{preparacao?.candidatos.length??0} romaneios oficiais candidatos</strong>, {preparacao?.auxiliares??0} rotas auxiliares excluídas. A importação cria somente prestações ainda inexistentes; nunca apaga, reinicia ou reabre romaneios baixados. Não grava rotas, paradas nem NFs.</p>
+          <h2 className="font-semibold">Importar rotas, paradas, NFs e prestações</h2>
+          <p className="text-sm text-muted-foreground">Prévia: <strong>{preparacao?.candidatos.length??0} romaneios oficiais candidatos</strong>, {preparacao?.auxiliares??0} rotas auxiliares excluídas. A importação chama uma única RPC que grava rotas, paradas, NFs, execuções, prestações e pendências, sem alterar a origem fiscal já cadastrada. Números sem série ambíguos e paradas sem NF ficam na fila de pendências.</p>
           {futuras>0 && <p className="rounded-md border border-amber-500/40 p-3 text-sm text-amber-500">{futuras} rota(s) com D0 no futuro. Aguarde a data da rota para abrir a prestação; hoje nenhum dado será gravado.</p>}
-          {!!preparacao?.avisos.length && <p className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Importação bloqueada: {preparacao.avisos.length} ocorrência(s) de conciliação ou romaneio. Revise os arquivos antes de gravar.</p>}
+          {!!preparacao?.avisos.length && <p className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Avisos da prévia: {preparacao.avisos.length} ocorrência(s) para revisão. A RPC verificará os vínculos estruturais antes de gravar e cancelará o lote se houver divergência.</p>}
           {!!preparacao?.pendenciasNF.length && <div className="space-y-3 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
-            <p className="font-semibold text-amber-500">{preparacao.pendenciasNF.length} pendência(s) fiscal(is) — não impedem abrir a fila, mas devem ser corrigidas antes de conferir ou baixar.</p>
-            <p className="text-muted-foreground">Os romaneios serão cadastrados apenas como ABERTA. O SIGO não está validando essas NFs ou dando baixa nelas.</p>
+            <p className="font-semibold text-amber-500">{preparacao.pendenciasNF.length} ocorrência(s) sem NF válida na prévia — serão gravadas como pendências pelo banco e exigem conferência antes da baixa.</p>
+            <p className="text-muted-foreground">NFs vazias ou curtas não serão inventadas; o banco registrará pendências. As prestações novas são abertas sem conferir nem dar baixa.</p>
             <ul className="list-disc space-y-1 pl-5">{preparacao.pendenciasNF.map(p=><li key={p.idParada}>Parada <strong>{p.idParada}</strong>, rota <strong>{p.rota||"não identificada"}</strong>, romaneio <strong>{p.romaneio||"não identificado"}</strong>: NF ausente ou inválida</li>)}</ul>
             <label className="flex items-start gap-2"><input type="checkbox" checked={cientePendencias} onChange={e=>setCientePendencias(e.target.checked)} className="mt-1"/><span>Estou ciente dessas pendências e vou conferir as NFs no GreenMile antes de registrar a conferência da prestação.</span></label>
           </div>}
@@ -213,7 +247,7 @@ function Importacao() {
             <table className="w-full text-left text-xs"><thead><tr><th className="p-2">Romaneio oficial</th><th className="p-2">D0</th><th className="p-2">Rota</th></tr></thead><tbody>{preparacao?.candidatos.map(c=><tr key={c.romaneio+"|"+c.rota} className="border-t border-border"><td className="p-2 font-mono">{c.romaneio}</td><td className="p-2">{c.d0}</td><td className="p-2">{c.rota}</td></tr>)}</tbody></table>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar e abrir prestações"}</button>
+            <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar importação StopView"}</button>
             <Link to="/prestacao" className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Ver acompanhamento atual</Link>
           </div>
           {!!preparacao?.pendenciasNF.length && !cientePendencias && !preparacao.bloqueado && <p className="text-sm text-amber-500">Para habilitar a importação, leia e marque a confirmação de ciência das pendências fiscais.</p>}
@@ -221,7 +255,7 @@ function Importacao() {
             <p>{feedback}</p>
             {importacaoConfirmada && <Link to="/prestacao" className="inline-flex rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground">Ir para acompanhamento de prestações</Link>}
           </div>}
-          <p className="text-xs text-muted-foreground">Somente romaneios fiscais candidatos com D0 válido e sem divergências estruturais podem entrar na fila. NFs ausentes geram pendências explícitas e exigem ciência do operador; abrir a fila não significa conferir a documentação. A confirmação é obrigatória e a gravação usa uma operação única no Supabase.</p>
+          <p className="text-xs text-muted-foreground">A importação só envia o CSV consolidado; o banco valida cada linha e faz a gravação atômica. NFs sem série ou sem número válido ficam pendentes, e nenhuma prestação é automaticamente conferida ou baixada.</p>
         </section>
       </div>}
     </div>
