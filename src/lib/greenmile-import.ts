@@ -84,7 +84,8 @@ export function conciliarStopViews(paradas: Linha[], pedidos: Linha[]) {
     if (codigoRota !== pedido["routeView.route.key"] || data !== (pedido["routeView.route.date"] ?? "").slice(0, 10)) {
       erros.push(`Divergência rota/data na parada ${id}`); continue;
     }
-    const nf = normalizarNF(pedido["stop.orders.number"] ?? "");
+    const bruto = (pedido["stop.orders.number"] ?? "").trim();
+    const nf = /^\d{1,2}$/.test(bruto) ? null : normalizarNF(bruto);
     if (!nf) { erros.push(`NF ausente ou inválida na parada ${id}`); continue; }
     const romaneio = parada["Descrição da rota"] || null;
     vinculos.push({
@@ -150,4 +151,71 @@ export function prepararPrestacoesGM(paradas: Linha[], pedidos: Linha[]) {
   }
   if (repetidos.size) avisos.push(`${repetidos.size} romaneio(s) associado(s) a múltiplas rotas`);
   return { candidatos, auxiliares, avisos, pendenciasNF, bloqueado: avisos.length > 0 };
+}
+
+
+/**
+ * Unifica os dois StopViews pelo ID da parada. Somente parse/validação de
+ * estrutura: a RPC é responsável por classificar e persistir NFs e pendências.
+ */
+export function prepararLinhasStopView(paradas: ResultadoCSV, pedidos: ResultadoCSV, organizacao = "RENOVELOG-ZL"): Linha[] {
+  const obrigatoriasParadas = ["id", "Código da rota", "Descrição da rota", "Data da Rota", "Organização"];
+  const obrigatoriasPedidos = ["id", "stop.orders.number", "routeView.route.key", "routeView.route.date"];
+  for (const nome of obrigatoriasParadas) {
+    if (!paradas.colunas.includes(nome)) throw new Error("StopView Paradas: coluna obrigatória ausente: " + nome);
+  }
+  for (const nome of obrigatoriasPedidos) {
+    if (!pedidos.colunas.includes(nome)) throw new Error("StopView Pedidos: coluna obrigatória ausente: " + nome);
+  }
+  const alvo = paradas.linhas.filter(l => l["Organização"]?.trim() === organizacao);
+  if (!alvo.length) throw new Error("StopView: nenhuma parada da organização " + organizacao + " encontrada");
+  const porId = new Map<string, Linha>();
+  for (const p of alvo) {
+    const id = p["id"]?.trim() ?? "";
+    if (!/^[0-9]{1,18}$/.test(id) || /^0+$/.test(id) || porId.has(id)) {
+      throw new Error("StopView: ID da parada inválido ou duplicado: " + (id || "(vazio)"));
+    }
+    const codigo = p["Código da rota"]?.trim() ?? "";
+    const romaneio = p["Descrição da rota"]?.trim() ?? "";
+    const data = (p["Data da Rota"] ?? "").slice(0, 10);
+    if (!codigo) throw new Error("StopView: Código da rota vazio na parada " + id);
+    if (!/^[0-9]{12}$/.test(romaneio)) throw new Error("StopView: Descrição da rota deve ser romaneio com 12 dígitos, parada " + id);
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data)) throw new Error("StopView: Data da Rota inválida na parada " + id);
+    porId.set(id, p);
+  }
+  const encontrados = new Set<string>();
+  const linhas: Linha[] = [];
+  for (const pedido of pedidos.linhas) {
+    const id = pedido["id"]?.trim() ?? "";
+    const parada = porId.get(id);
+    if (!parada) continue; // Pedidos de outras organizações.
+    encontrados.add(id);
+    const codigo = parada["Código da rota"]?.trim() ?? "";
+    const data = (parada["Data da Rota"] ?? "").slice(0, 10);
+    if (pedido["routeView.route.key"]?.trim() !== codigo ||
+      (pedido["routeView.route.date"] ?? "").slice(0, 10) !== data) {
+      throw new Error("StopView: rota/data divergente entre Paradas e Pedidos, parada " + id);
+    }
+    linhas.push({
+      ...parada, id,
+      "Código da rota": codigo,
+      "Descrição da rota": parada["Descrição da rota"].trim(),
+      "Data da Rota": data,
+      "routeView.route.key": pedido["routeView.route.key"],
+      "routeView.route.date": data,
+      "stop.orders.number": pedido["stop.orders.number"] ?? "",
+    });
+  }
+  for (const [id, parada] of porId) {
+    if (encontrados.has(id)) continue;
+    // Parada sem pedido não pode desaparecer: gerará uma pendência SEM_NF.
+    linhas.push({
+      ...parada, id,
+      "Código da rota": parada["Código da rota"].trim(),
+      "Descrição da rota": parada["Descrição da rota"].trim(),
+      "Data da Rota": (parada["Data da Rota"] ?? "").slice(0, 10),
+      "stop.orders.number": "",
+    });
+  }
+  return linhas;
 }
