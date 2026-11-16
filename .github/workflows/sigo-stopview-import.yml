@@ -75,6 +75,8 @@ jobs:
           done
       - name: Run StopView persistence / negative / idempotency SQL tests
         run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-import.sql
+      - name: Import real anonymized StopView fixture (fails on missing required coverage)
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-fixture-real.sql
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
