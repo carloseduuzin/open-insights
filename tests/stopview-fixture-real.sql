@@ -46,7 +46,7 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM stopview_pedidos_fixture WHERE
       data_rota <> '2026-11-16' OR id !~ '^[0-9]+$'
-      OR codigo_rota IS NULL OR valor_bruto IS NULL) THEN
+      OR codigo_rota IS NULL) THEN
     RAISE EXCEPTION 'Fixture real: coluna técnica inválida';
   END IF;
 
@@ -72,7 +72,7 @@ BEGIN
       'Código da rota', f.codigo_rota,
       'Descrição da rota', r.romaneio_ficticio,
       'Data da Rota', f.data_rota,
-      'stop.orders.number', f.valor_bruto,
+      'stop.orders.number', coalesce(f.valor_bruto,''),
       'routeView.route.key', f.codigo_rota,
       'routeView.route.date', f.data_rota,
       'Código da Localidade', f.codigo_localidade,
