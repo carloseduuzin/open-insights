@@ -44,7 +44,7 @@ jobs:
           CREATE ROLE service_role NOLOGIN;
           CREATE SCHEMA auth;
           CREATE TABLE auth.users (id uuid PRIMARY KEY, raw_user_meta_data jsonb);
-          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $ SELECT '11111111-1111-4111-8111-111111111111'::uuid $;
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT '11111111-1111-4111-8111-111111111111'::uuid $$;
           SQL
       - name: Apply public schema baseline from zero
         run: |
