@@ -81,6 +81,16 @@
 - O workflow mantém `workflow_dispatch`, além de `pull_request` para a branch `feat/sigo-supabase-v1`, limitado aos arquivos `supabase/**`. Não executa migrations no banco hospedado.
 - A aprovação do CI demonstra replay com dependências mínimas de `auth`, não equivalência completa com instalações Supabase nem reconciliação do histórico remoto de migrations.
 
+## 2026-11-16 — PR #4 / P0: responsável da prestação é imutável entre operadores
+
+- **Decisão operacional:** `prestacoes.responsavel_id` identifica exclusivamente o usuário que cadastrou o romaneio. O responsável **não é transferido** ao operador que registra o retorno, confere ou envia a prestação à JTI.
+- **Problema reproduzido:** A cria via `sigo_criar_prestacao`; B executa `sigo_avancar_prestacao(id, 'RETORNADA')`. A versão anterior da RPC atribuía `responsavel_id = v_usuario`, e o trigger de auditoria do hardening rejeitava com `Identidade e responsável são imutáveis`.
+- **Correção no mesmo PR:** `supabase/migrations/20261116000300_sigo_sla_hardening_v2.sql` redefine `public.sigo_avancar_prestacao(uuid,text)` sobre o baseline removendo somente `responsavel_id=v_usuario` da etapa `RETORNADA` e `responsavel_id=coalesce(p.responsavel_id,v_usuario)` da `CONFERIDA`. Permissões, `SECURITY DEFINER`, `SET search_path TO ''`, validação de perfil ativo e demais regras de transição permanecem iguais.
+- **Auditoria das etapas:** `conferida_por` registra quem conferiu e `enviada_por` registra quem enviou. O retorno da RPC para a etapa `RETORNADA` continua entregando `p.responsavel_id` no campo `registrado_por` (comportamento anterior preservado). Isso **não identifica o operador que efetuou o retorno**; eventual campo `retornada_por` exige evolução separada, não faz parte deste P0.
+- **Teste automatizado no CI PostgreSQL 17:** `auth.uid()` passa a obter o UUID via `NULLIF(current_setting('sigo.uid', true), '')::uuid` no banco descartável, permitindo alternar entre usuários simulados. Perfis A e B possuem role `operacional`. O fluxo verificado é **A cria → B retorna → A confere → B envia**, garantindo o mesmo `responsavel_id` em todas as etapas e conferência/envio auditados pelos operadores corretos.
+- **Teste de autorização:** um terceiro perfil ativo sem role tenta criar e avançar uma prestação; ambas as RPCs devem rejeitar com `Usuário sem acesso ativo ao SIGO`, sem gravar a tentativa de cadastro.
+- **Escopo:** nenhuma mudança no Supabase hospedado, nenhuma alteração em dados reais e nenhum PR adicional. Esta correção atualiza o PR #4 antes do merge.
+
 ## 2026-11-16 — PR #5 — série padrão e transferência VT (revisão do CSV de 307 linhas)
 
 **Origem da decisão:** revisão operacional informada do StopView real de 16/11/2026, com 307 linhas, sobre baseline + migration `0300` + `0400`. Os cinco casos reportados, na rota `SP-1MFV69`, foram: `5603005`, `5604380`, `5605180`, `5606327` e `5607071`. O arquivo original não foi incorporado ao repositório; o CI reproduz esses cinco valores em registros sintéticos isolados.
