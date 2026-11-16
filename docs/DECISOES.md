@@ -80,3 +80,21 @@
 - Confirmação independente em GitHub Actions: workflow `sigo-schema-baseline.yml` executou com sucesso em **PostgreSQL 16 e 17**, rodando aplicação do zero, reaplicação, conferência de inventário e verificações de segurança: https://github.com/carloseduuzin/open-insights/actions/runs/43883902998.
 - O workflow mantém `workflow_dispatch`, além de `pull_request` para a branch `feat/sigo-supabase-v1`, limitado aos arquivos `supabase/**`. Não executa migrations no banco hospedado.
 - A aprovação do CI demonstra replay com dependências mínimas de `auth`, não equivalência completa com instalações Supabase nem reconciliação do histórico remoto de migrations.
+
+## 2026-11-16 — PR #5 — série padrão e transferência VT (revisão do CSV de 307 linhas)
+
+**Origem da decisão:** revisão operacional informada do StopView real de 16/11/2026, com 307 linhas, sobre baseline + migration `0300` + `0400`. Os cinco casos reportados, na rota `SP-1MFV69`, foram: `5603005`, `5604380`, `5605180`, `5606327` e `5607071`. O arquivo original não foi incorporado ao repositório; o CI reproduz esses cinco valores em registros sintéticos isolados.
+
+**P1 — NF sem série:**
+- Criar `sla_config.serie_padrao` (`text NOT NULL DEFAULT '7'`, com check de 1 a 3 dígitos) e garantir a linha `sla_config(id=true)` de forma idempotente. A configuração deve ser consultada pelo banco dentro da RPC, não enviada pelo navegador.
+- Após normalizar o número da NF, fazer a busca sob lock transacional: **zero** NFs com o número → criar a nota com `serie_padrao`, fixar `romaneio_origem`/`origem_rota_id` na primeira inserção e registrar `SERIE_ASSUMIDA` em `pendencias_importacao`, imediatamente `TRATADA` com `tratada_por` e `tratada_em` (rastreabilidade informativa); **uma** NF com o número → vincular à NF existente, preservando série e origem; **duas ou mais** NFs → não criar outra e registrar `SERIE_AMBIGUA` com `status='PENDENTE'`.
+- Os cinco exemplos reais, antes incorretamente classificados `SERIE_AMBIGUA`, devem resultar em NFs `005603005-7`, `005604380-7`, `005605180-7`, `005606327-7` e `005607071-7`, desde que não haja registros prévios com esses números. O CI verifica essa condição a partir de banco vazio. Não há atribuição automática de série caso já exista uma ou mais NFs, exceto vincular à única correspondente.
+- `SERIE_ASSUMIDA` é registro de auditoria concluído automaticamente, não pendência operacional bloqueante. A NF permanece sujeita à validação fiscal conforme os procedimentos da operação.
+
+**P2 — rota VT:**
+- Reconhecer também o padrão de rota com o sufixo VT imediatamente após o número da saída (exemplo sintético `SP-1VT69`), além de `VT-1`. A identificação de **valor curto `5` em rota VT** ocorre antes das validações de NF, gerando `TRANSFERENCIA`, e nunca `SEM_NF`.
+- Valores vazios continuam `SEM_NF`. Valores de 1 a 2 dígitos fora de VT também continuam `SEM_NF`. Transferência não fabrica nota fiscal.
+
+**Cobertura de testes:** `tests/stopview-import.sql` inclui os cinco números da rota `SP-1MFV69`, relatório informativo já tratado, não duplicação após reimportação, VT `5`, duas séries existentes causando `SERIE_AMBIGUA` e o caso de correspondência única `005605465-7`/`5605465`.
+
+**Escopo:** mudanças restritas ao PR #5, na branch `feat/importacao-nf`. Não aplicar migrations no Supabase hospedado; o replay é validado exclusivamente no PostgreSQL descartável do CI. O histórico remoto de migrations ainda requer reconciliação antes de implantação.
