@@ -278,6 +278,17 @@ BEGIN
     v_tipo_execucao := CASE
       WHEN v_nf_origem=v_rota_id AND NOT v_vt THEN 'CARGA'
       WHEN v_vt THEN 'TRANSFERENCIA' ELSE 'REENTREGA' END;
+    -- O schema permite apenas uma execucao aberta por NF; ao mudar de rota,
+    -- encerra a execucao anterior sem jamais alterar a origem fiscal.
+    IF NOT EXISTS (
+      SELECT 1 FROM public.nf_execucoes
+      WHERE nf_id=v_nf_id AND rota_id=v_rota_id
+    ) THEN
+      UPDATE public.nf_execucoes
+        SET encerrada_em=clock_timestamp()
+      WHERE nf_id=v_nf_id AND rota_id IS DISTINCT FROM v_rota_id
+        AND encerrada_em IS NULL;
+    END IF;
     INSERT INTO public.nf_execucoes(nf_id,rota_id,tipo,registrada_por)
     VALUES (v_nf_id,v_rota_id,v_tipo_execucao,v_usuario)
     ON CONFLICT (nf_id,rota_id) DO NOTHING;
