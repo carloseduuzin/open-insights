@@ -54,11 +54,22 @@ jobs:
           CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
             AS $$ SELECT NULLIF(current_setting('sigo.uid', true),'')::uuid $$;
           SQL
+      # PR #4 ainda não entrou na branch-base: valida exatamente seu commit revisado.
+      - name: Checkout SLA hardening 0300 (PR #4, enquanto não mesclado)
+        if: ${{ hashFiles('supabase/migrations/20261116000300_sigo_sla_hardening_v2.sql') == '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: a75c78884bfadab8479f4a6250a0d7fba879c23e
+          path: sigo-sla-pr4
       - name: Apply baseline and all following migrations in order
         shell: bash
         run: |
           set -euo pipefail
           for migration in supabase/migrations/*.sql; do
+            if [[ "$migration" == "supabase/migrations/20261116000400_sigo_importacao_nf.sql" && ! -f "supabase/migrations/20261116000300_sigo_sla_hardening_v2.sql" ]]; then
+              echo "Applying reviewed 0300 from PR #4 before 0400"
+              psql -X -v ON_ERROR_STOP=1 -f "sigo-sla-pr4/supabase/migrations/20261116000300_sigo_sla_hardening_v2.sql"
+            fi
             echo "Applying $migration"
             psql -X -v ON_ERROR_STOP=1 -f "$migration"
           done
