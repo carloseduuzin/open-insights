@@ -236,10 +236,10 @@ function Importacao() {
           <h2 className="font-semibold">Importar rotas, paradas, NFs e prestações</h2>
           <p className="text-sm text-muted-foreground">Prévia: <strong>{preparacao?.candidatos.length??0} romaneios oficiais candidatos</strong>, {preparacao?.auxiliares??0} rotas auxiliares excluídas. A importação chama uma única RPC que grava rotas, paradas, NFs, execuções, prestações e pendências, sem alterar a origem fiscal já cadastrada. Números sem série ambíguos e paradas sem NF ficam na fila de pendências.</p>
           {futuras>0 && <p className="rounded-md border border-amber-500/40 p-3 text-sm text-amber-500">{futuras} rota(s) com D0 no futuro. Aguarde a data da rota para abrir a prestação; hoje nenhum dado será gravado.</p>}
-          {!!preparacao?.avisos.length && <p className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Importação bloqueada: {preparacao.avisos.length} ocorrência(s) de conciliação ou romaneio. Revise os arquivos antes de gravar.</p>}
+          {!!preparacao?.avisos.length && <p className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Avisos da prévia: {preparacao.avisos.length} ocorrência(s) para revisão. A RPC verificará os vínculos estruturais antes de gravar e cancelará o lote se houver divergência.</p>}
           {!!preparacao?.pendenciasNF.length && <div className="space-y-3 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
-            <p className="font-semibold text-amber-500">{preparacao.pendenciasNF.length} pendência(s) fiscal(is) — não impedem abrir a fila, mas devem ser corrigidas antes de conferir ou baixar.</p>
-            <p className="text-muted-foreground">Os romaneios serão cadastrados apenas como ABERTA. O SIGO não está validando essas NFs ou dando baixa nelas.</p>
+            <p className="font-semibold text-amber-500">{preparacao.pendenciasNF.length} ocorrência(s) sem NF válida na prévia — serão gravadas como pendências pelo banco e exigem conferência antes da baixa.</p>
+            <p className="text-muted-foreground">NFs vazias ou curtas não serão inventadas; o banco registrará pendências. As prestações novas são abertas sem conferir nem dar baixa.</p>
             <ul className="list-disc space-y-1 pl-5">{preparacao.pendenciasNF.map(p=><li key={p.idParada}>Parada <strong>{p.idParada}</strong>, rota <strong>{p.rota||"não identificada"}</strong>, romaneio <strong>{p.romaneio||"não identificado"}</strong>: NF ausente ou inválida</li>)}</ul>
             <label className="flex items-start gap-2"><input type="checkbox" checked={cientePendencias} onChange={e=>setCientePendencias(e.target.checked)} className="mt-1"/><span>Estou ciente dessas pendências e vou conferir as NFs no GreenMile antes de registrar a conferência da prestação.</span></label>
           </div>}
@@ -247,7 +247,7 @@ function Importacao() {
             <table className="w-full text-left text-xs"><thead><tr><th className="p-2">Romaneio oficial</th><th className="p-2">D0</th><th className="p-2">Rota</th></tr></thead><tbody>{preparacao?.candidatos.map(c=><tr key={c.romaneio+"|"+c.rota} className="border-t border-border"><td className="p-2 font-mono">{c.romaneio}</td><td className="p-2">{c.d0}</td><td className="p-2">{c.rota}</td></tr>)}</tbody></table>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar e abrir prestações"}</button>
+            <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar importação StopView"}</button>
             <Link to="/prestacao" className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Ver acompanhamento atual</Link>
           </div>
           {!!preparacao?.pendenciasNF.length && !cientePendencias && !preparacao.bloqueado && <p className="text-sm text-amber-500">Para habilitar a importação, leia e marque a confirmação de ciência das pendências fiscais.</p>}
@@ -255,7 +255,7 @@ function Importacao() {
             <p>{feedback}</p>
             {importacaoConfirmada && <Link to="/prestacao" className="inline-flex rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground">Ir para acompanhamento de prestações</Link>}
           </div>}
-          <p className="text-xs text-muted-foreground">Somente romaneios fiscais candidatos com D0 válido e sem divergências estruturais podem entrar na fila. NFs ausentes geram pendências explícitas e exigem ciência do operador; abrir a fila não significa conferir a documentação. A confirmação é obrigatória e a gravação usa uma operação única no Supabase.</p>
+          <p className="text-xs text-muted-foreground">A importação só envia o CSV consolidado; o banco valida cada linha e faz a gravação atômica. NFs sem série ou sem número válido ficam pendentes, e nenhuma prestação é automaticamente conferida ou baixada.</p>
         </section>
       </div>}
     </div>
