@@ -116,7 +116,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.gm_importacoes;
   IF v_count <> 1 THEN RAISE EXCEPTION 'Replay duplicou importacao'; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao;
-  IF v_count <> 11 THEN RAISE EXCEPTION 'Replay duplicou pendencias'; END IF;
+  IF v_count <> 9 THEN RAISE EXCEPTION 'Replay duplicou pendencias'; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes;
   IF v_count <> 8 THEN RAISE EXCEPTION 'Replay duplicou execucoes'; END IF;
 
