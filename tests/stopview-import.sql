@@ -59,8 +59,8 @@ BEGIN
   IF v_resultado->>'status' <> 'IMPORTADO' OR
      (v_resultado->>'linhas')::int <> 15 OR
      (v_resultado->>'prestacoes_novas')::int <> 2 OR
-     (v_resultado->>'notas_novas')::int <> 2 OR
-     (v_resultado->>'execucoes_novas')::int <> 4 OR
+     (v_resultado->>'notas_novas')::int <> 8 OR
+     (v_resultado->>'execucoes_novas')::int <> 10 OR
      (v_resultado->>'pendencias_novas')::int <> 11 THEN
     RAISE EXCEPTION 'Resumo importacao incorreto: %',v_resultado;
   END IF;
@@ -71,17 +71,21 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.paradas;
   IF v_count <> 15 THEN RAISE EXCEPTION 'Esperadas 15 paradas, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.notas_fiscais;
-  IF v_count <> 2 THEN RAISE EXCEPTION 'Esperadas 2 NFs, obtido %',v_count; END IF;
+  IF v_count <> 8 THEN RAISE EXCEPTION 'Esperadas 8 NFs, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes;
-  IF v_count <> 4 THEN RAISE EXCEPTION 'Esperadas 4 execucoes, obtido %',v_count; END IF;
+  IF v_count <> 10 THEN RAISE EXCEPTION 'Esperadas 10 execucoes, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao WHERE motivo='SERIE_AMBIGUA';
-  IF v_count <> 6 THEN RAISE EXCEPTION 'Esperadas 6 series ambiguas, obtido %',v_count; END IF;
+  IF v_count <> 0 THEN RAISE EXCEPTION 'Sem series concorrentes nao deve existir SERIE_AMBIGUA'; END IF;
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
+    WHERE motivo='SERIE_ASSUMIDA' AND status='TRATADA'
+      AND tratada_por=v_usuario AND tratada_em IS NOT NULL;
+  IF v_count <> 6 THEN RAISE EXCEPTION 'Esperadas 6 series assumidas TRATADA, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao WHERE motivo='SEM_NF';
   IF v_count <> 3 THEN RAISE EXCEPTION 'Esperados 3 vazios, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao WHERE motivo='TRANSFERENCIA';
   IF v_count <> 2 THEN RAISE EXCEPTION 'Esperados 2 VT com valor 5, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.prestacao_notas;
-  IF v_count <> 2 THEN RAISE EXCEPTION 'Esperados 2 canhotos de origem, obtido %',v_count; END IF;
+  IF v_count <> 8 THEN RAISE EXCEPTION 'Esperados 8 canhotos de origem, obtido %',v_count; END IF;
 
   SELECT id,romaneio_origem INTO STRICT v_nf_id,v_origem FROM public.notas_fiscais
     WHERE numero='005605465' AND serie='7';
@@ -109,7 +113,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.pendencias_importacao;
   IF v_count <> 11 THEN RAISE EXCEPTION 'Replay duplicou pendencias'; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes;
-  IF v_count <> 4 THEN RAISE EXCEPTION 'Replay duplicou execucoes'; END IF;
+  IF v_count <> 10 THEN RAISE EXCEPTION 'Replay duplicou execucoes'; END IF;
 
   -- Contrato obrigatório: ausência de coluna cancela TODO o lote.
   v_bloqueado := false;
@@ -151,6 +155,122 @@ BEGIN
       AND prosecdef AND proconfig @> ARRAY['search_path=""']
   ) THEN
     RAISE EXCEPTION 'RPC fora do padrao SECURITY DEFINER search_path';
+  END IF;
+
+  -- P1: cinco números reais do CSV de 16/11, rota SP-1MFV69.
+  -- A NF ainda não existe: criar com série 7 e registrar SERIE_ASSUMIDA/TRATADA.
+  PERFORM set_config('sigo.uid',v_usuario::text,true);
+  IF (SELECT serie_padrao FROM public.sla_config WHERE id=true) <> '7' THEN
+    RAISE EXCEPTION 'sla_config.serie_padrao deve iniciar em 7';
+  END IF;
+  SELECT jsonb_agg(jsonb_build_object(
+    'id', parada::text,
+    'Código da rota','SP-1MFV69',
+    'Descrição da rota','123456789014',
+    'Data da Rota','2026-11-16',
+    'stop.orders.number', bruto,
+    'routeView.route.key','SP-1MFV69',
+    'routeView.route.date','2026-11-16'
+  ) ORDER BY parada) INTO v_linhas
+  FROM (VALUES
+    (2001, '5603005'), (2002, '5604380'), (2003, '5605180'),
+    (2004, '5606327'), (2005, '5607071')
+  ) AS reais(parada, bruto);
+  v_payload := jsonb_build_object(
+    'arquivo_nome','StopView-16-11-2026-SP-1MFV69.csv',
+    'sha256',repeat('d',64),'linhas',v_linhas
+  );
+  v_resultado := public.sigo_importar_stopview(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',v_payload);
+  IF v_resultado->>'status' <> 'IMPORTADO'
+    OR (v_resultado->>'notas_novas')::int <> 5
+    OR (v_resultado->>'pendencias_novas')::int <> 5 THEN
+    RAISE EXCEPTION 'P1: cinco NFs reais sem série não foram criadas: %',v_resultado;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.notas_fiscais
+    WHERE numero IN ('005603005','005604380','005605180','005606327','005607071')
+      AND serie='7'
+      AND romaneio_origem='123456789014'
+      AND origem_rota_id=(SELECT id FROM public.rotas WHERE codigo='SP-1MFV69');
+  IF v_count <> 5 THEN
+    RAISE EXCEPTION 'P1: esperadas cinco NFs com série 7 e origem SP-1MFV69, obtido %',v_count;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
+    WHERE importacao_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'::uuid
+      AND motivo='SERIE_ASSUMIDA' AND status='TRATADA'
+      AND tratada_por=v_usuario AND tratada_em IS NOT NULL;
+  IF v_count <> 5 THEN
+    RAISE EXCEPTION 'P1: esperadas cinco pendências informativas tratadas, obtido %',v_count;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
+    WHERE importacao_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'::uuid
+      AND motivo='SERIE_AMBIGUA';
+  IF v_count <> 0 THEN RAISE EXCEPTION 'P1: série inexistente não é ambígua'; END IF;
+
+  -- Reimportação dos cinco números: nenhuma NF ou pendência extra.
+  v_resultado := public.sigo_importar_stopview(
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',v_payload);
+  IF v_resultado->>'status' <> 'JA_IMPORTADO' THEN
+    RAISE EXCEPTION 'P1: cinco números duplicados no replay: %',v_resultado;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
+    WHERE importacao_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'::uuid
+      AND motivo='SERIE_ASSUMIDA';
+  IF v_count <> 5 THEN RAISE EXCEPTION 'P1: replay criou pendências extras'; END IF;
+
+  -- P2: formato realista SP-1VT69 (VT após saída numérica);
+  -- o valor 5 deve ser TRANSFERENCIA, não SEM_NF, mesmo sem série/NF.
+  v_payload := jsonb_build_object(
+    'arquivo_nome','StopView-VT-16-11-2026.csv',
+    'sha256',repeat('e',64),
+    'linhas',jsonb_build_array(jsonb_build_object(
+      'id','3001', 'Código da rota','SP-1VT69',
+      'Descrição da rota','333333333333','Data da Rota','2026-11-16',
+      'stop.orders.number','5','routeView.route.key','SP-1VT69',
+      'routeView.route.date','2026-11-16'
+    ))
+  );
+  v_resultado := public.sigo_importar_stopview(
+    '99999999-9999-4999-8999-999999999999',v_payload);
+  IF v_resultado->>'status' <> 'IMPORTADO'
+    OR (v_resultado->>'pendencias_novas')::int <> 1
+    OR (v_resultado->>'notas_novas')::int <> 0 THEN
+    RAISE EXCEPTION 'P2: VT 5 deve gerar só uma pendência: %',v_resultado;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.pendencias_importacao
+    WHERE importacao_id='99999999-9999-4999-8999-999999999999'::uuid
+      AND codigo_rota='SP-1VT69' AND valor_bruto='5'
+      AND motivo='TRANSFERENCIA' AND status='PENDENTE'
+  ) THEN
+    RAISE EXCEPTION 'P2: valor 5 em VT foi classificado incorretamente';
+  END IF;
+
+  -- Número com DUAS séries existentes é a única condição de SERIE_AMBIGUA.
+  INSERT INTO public.notas_fiscais (numero,serie)
+    VALUES ('005607171','7'),('005607171','8');
+  v_payload := jsonb_build_object(
+    'arquivo_nome','StopView-ambiguidade.csv',
+    'sha256',repeat('f',64),
+    'linhas',jsonb_build_array(jsonb_build_object(
+      'id','4001', 'Código da rota','SP-1MFV70',
+      'Descrição da rota','123456789015','Data da Rota','2026-11-16',
+      'stop.orders.number','5607171','routeView.route.key','SP-1MFV70',
+      'routeView.route.date','2026-11-16'
+    ))
+  );
+  v_resultado := public.sigo_importar_stopview(
+    '88888888-8888-4888-8888-888888888888',v_payload);
+  IF v_resultado->>'status' <> 'IMPORTADO'
+    OR (v_resultado->>'notas_novas')::int <> 0 THEN
+    RAISE EXCEPTION 'Duas séries existentes devem impedir nova NF: %',v_resultado;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.pendencias_importacao
+    WHERE importacao_id='88888888-8888-4888-8888-888888888888'::uuid
+      AND motivo='SERIE_AMBIGUA' AND status='PENDENTE'
+  ) THEN
+    RAISE EXCEPTION 'Duas séries existentes devem gerar SERIE_AMBIGUA pendente';
   END IF;
 END
 $test$;
