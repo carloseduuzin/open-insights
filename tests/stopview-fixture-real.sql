@@ -159,5 +159,52 @@ BEGIN
       'COBERTURA_INCOMPLETA: fixture 104 linhas de origem não contém casos obrigatórios (duplicata 005605465 %/2, série assumida %/5, VT %/2, vazios %/3). Fornecer export completo de 307 linhas.',
       v_duplicata, v_sem_serie, v_vt, v_sem_nf;
   END IF;
+
+  -- Asserções persistentes obrigatórias, executadas quando a amostra
+  -- cobrir todos os casos reais. Os dados de Pedidos NÃO são fabricados.
+  SELECT count(*) INTO v_count FROM public.notas_fiscais
+    WHERE numero='005605465';
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'Esperada uma única NF número 005605465, obtido %',v_count;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.parada_notas pn
+    JOIN public.notas_fiscais nf ON nf.id=pn.nf_id
+    WHERE nf.numero='005605465';
+  IF v_count <> 2 THEN
+    RAISE EXCEPTION 'NF 005605465 deveria possuir dois vínculos de paradas, obtido %',v_count;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.notas_fiscais
+    WHERE numero IN ('005603005','005604380','005605180','005606327','005607071')
+      AND serie='7';
+  IF v_count <> 5 THEN
+    RAISE EXCEPTION 'Cinco NFs reais sem série deveriam usar série padrão 7, obtido %',v_count;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
+    WHERE importacao_id='55555555-5555-4555-8555-555555555556'::uuid
+      AND motivo='SERIE_ASSUMIDA' AND status='TRATADA'
+      AND tratada_por=v_usuario AND tratada_em IS NOT NULL
+      AND valor_bruto IN ('5603005','5604380','5605180','5606327','5607071');
+  IF v_count <> 5 THEN
+    RAISE EXCEPTION 'Cinco séries assumidas deveriam estar TRATADA, obtido %',v_count;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
+    WHERE importacao_id='55555555-5555-4555-8555-555555555556'::uuid
+      AND motivo='TRANSFERENCIA' AND valor_bruto='5'
+      AND codigo_rota IN ('SP-1VTVU004','SP-1VTVU005');
+  IF v_count <> 2 THEN
+    RAISE EXCEPTION 'Esperadas duas TRANSFERENCIA em rotas VTVU, obtido %',v_count;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
+    WHERE importacao_id='55555555-5555-4555-8555-555555555556'::uuid
+      AND motivo='SEM_NF';
+  IF v_count <> 3 THEN
+    RAISE EXCEPTION 'Esperadas três paradas vazias SEM_NF, obtido %',v_count;
+  END IF;
+
 END
 $fixture$;
