@@ -117,7 +117,7 @@ BEGIN
     PERFORM public.sigo_importar_stopview(
       'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       jsonb_build_object('arquivo_nome','incompleto.csv','sha256',repeat('b',64),
-        'linhas',jsonb_build_array(v_linhas->0 - 'Código da rota'))
+        'linhas',jsonb_build_array((v_linhas->0) - 'Código da rota'))
     );
   EXCEPTION WHEN OTHERS THEN
     IF position('coluna obrigatória' in SQLERRM) = 0 THEN RAISE; END IF;
