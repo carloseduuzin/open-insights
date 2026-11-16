@@ -75,6 +75,17 @@ jobs:
           done
       - name: Run StopView persistence / negative / idempotency SQL tests
         run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-import.sql
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test
       - name: Prepare separate PostgreSQL database for real fixture
         shell: bash
         run: |
@@ -94,14 +105,3 @@ jobs:
         env:
           PGDATABASE: sigo_fixture_ci
         run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-fixture-real.sql
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
-      - name: Unit tests
-        run: npm run test
