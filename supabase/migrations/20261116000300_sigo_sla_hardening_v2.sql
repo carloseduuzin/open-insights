@@ -5,6 +5,37 @@
 
 insert into public.sla_config (id) values (true) on conflict (id) do nothing;
 
+-- P0: responsável original permanece imutável; executores são auditados nas respectivas etapas.
+CREATE OR REPLACE FUNCTION public.sigo_avancar_prestacao(p_prestacao_id uuid, p_etapa text)
+ RETURNS TABLE(id uuid, status text, registrado_em timestamp with time zone, registrado_por uuid)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare v_usuario uuid := (select auth.uid());
+begin
+ if v_usuario is null or not (select public.sigo_is_active()) then
+  raise exception 'Usuário sem acesso ativo ao SIGO';
+ end if;
+ if p_etapa not in ('RETORNADA','CONFERIDA') then
+  raise exception 'Etapa não permitida';
+ end if;
+ if p_etapa='RETORNADA' then
+  return query
+  update public.prestacoes p
+    set status='RETORNADA', retornada_em=clock_timestamp()
+  where p.id=p_prestacao_id and p.status='ABERTA' and p.retornada_em is null
+  returning p.id,p.status,p.retornada_em,p.responsavel_id;
+ else
+  return query
+  update public.prestacoes p
+    set status='CONFERIDA', conferida_em=clock_timestamp(), conferida_por=v_usuario
+  where p.id=p_prestacao_id and p.status='RETORNADA' and p.conferida_em is null
+  returning p.id,p.status,p.conferida_em,p.conferida_por;
+ end if;
+ if not found then raise exception 'Prestação não encontrada ou etapa anterior não concluída'; end if;
+end; $function$;
+
 -- Hardening: timestamp ownership and immutable SLA breach history (corpo original 0500).
 create or replace function public.sigo_prestacao_timestamps() returns trigger language plpgsql set search_path='' as $$
 declare dias_pendencia integer;
