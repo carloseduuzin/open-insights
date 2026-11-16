@@ -72,4 +72,11 @@
 - O dump de `public` depende de objetos fora do schema: `auth.users`, `auth.uid()` e papéis `anon`, `authenticated`, `service_role`. O workflow isolado cria apenas stubs dessas dependências, **não reproduz o Supabase completo**.
 - O trigger de criação de perfil `sigo_auth_user_created` está anexado a `auth.users`, portanto é externo ao conjunto de triggers de tabelas `public` e não está incluído em um snapshot limitado a `public`. Sua ausência exige atenção antes de considerar o baseline um substituto integral do ambiente Supabase.
 - Snapshot sem dados não inclui a linha de configuração inicial `sla_config(id=true)`; a implantação futura precisa tratar seed/configuração em uma migration separada, se necessário.
-- Aplicação ao banco hospedado **expressamente proibida nesta etapa**. Validar em CI antes de merge e depois reconciliar histórico de migrations em etapa controlada.
+- Aplicação ao banco hospedado **expressamente proibida nesta etapa**. A validação em CI isolado foi aprovada; o histórico remoto de migrations precisa ser reconciliado em etapa controlada antes de qualquer aplicação no projeto Supabase.
+
+#### Homologação do baseline — 16/11/2026
+
+- Validação informada pelo responsável: execução em PostgreSQL 16 limpo com stub de `auth`, aplicação e reaplicação sem erros, inventário `14 tabelas / 2 views / 6 triggers / 33 políticas / 14 funções` e zero violações de RLS, `SECURITY DEFINER` sem `search_path` e views sem `security_invoker`.
+- Confirmação independente em GitHub Actions: workflow `sigo-schema-baseline.yml` executou com sucesso em **PostgreSQL 16 e 17**, rodando aplicação do zero, reaplicação, conferência de inventário e verificações de segurança: https://github.com/carloseduuzin/open-insights/actions/runs/43883902998.
+- O workflow mantém `workflow_dispatch`, além de `pull_request` para a branch `feat/sigo-supabase-v1`, limitado aos arquivos `supabase/**`. Não executa migrations no banco hospedado.
+- A aprovação do CI demonstra replay com dependências mínimas de `auth`, não equivalência completa com instalações Supabase nem reconciliação do histórico remoto de migrations.
