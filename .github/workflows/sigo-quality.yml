@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feat/sigo-supabase-v1]
+    branches: [feat/sigo-supabase-v1, chore/baseline-rpcs]
   workflow_dispatch:
 
 permissions:
