@@ -170,7 +170,7 @@ BEGIN
     v_rom := btrim(v_linha->>'Descrição da rota');
     v_data := (v_linha->>'Data da Rota')::date;
     v_id_parada := (v_linha->>'id')::bigint;
-    v_vt := upper(v_cod) ~ '(^|[-_0-9])VT($|[-_0-9])';
+    v_vt := upper(v_cod) ~ '(^|[-_])VT($|[-_A-Z0-9])' OR upper(v_cod) ~ '^SP-[0-9]+VT[A-Z0-9]*
     v_oficial := NOT v_vt AND v_rom !~ '^(.)\1{11}$' AND v_rom NOT LIKE '6000000000%';
     INSERT INTO public.rotas (data_rota,codigo,romaneio_gm,tipo_romaneio,
       motorista_gm,importacao_id)
@@ -222,6 +222,315 @@ BEGIN
     v_id_parada := (v_linha->>'id')::bigint;
     v_valor := btrim(coalesce(v_linha->>'stop.orders.number',''));
     v_vt := upper(v_cod) ~ '(^|[-_0-9])VT($|[-_0-9])';
+    v_motivo := NULL;
+    v_numero := NULL; v_serie := NULL; v_chave := NULL; v_nf_id := NULL;
+    v_serie_assumida := false;
+    SELECT id INTO STRICT v_rota_id FROM public.rotas
+      WHERE data_rota=v_data AND codigo=v_cod;
+
+    -- Identificar transferência VT antes de tratar valor curto como NF inválida.
+    IF v_vt AND v_valor ~ '^[0-9]{1,2}$' THEN
+      v_motivo := 'TRANSFERENCIA';
+    ELSIF v_valor = '' OR v_valor ~ '^[0-9]{1,2}$' THEN
+      v_motivo := 'SEM_NF';
+    ELSIF v_valor ~ '^[0-9]{44}$' THEN
+      v_numero := substring(v_valor from 26 for 9);
+      v_serie := (substring(v_valor from 23 for 3)::integer)::text;
+      v_chave := v_valor;
+    ELSIF v_valor ~ '^[0-9]{1,9}-[0-9]{1,3}$' THEN
+      v_numero := lpad(split_part(v_valor,'-',1),9,'0');
+      v_serie := (split_part(v_valor,'-',2)::integer)::text;
+    ELSIF v_valor ~ '^[0-9]{1,9}$' THEN
+      v_numero := lpad(v_valor,9,'0');
+    ELSE
+      v_motivo := 'NF_INVALIDA';
+    END IF;
+    IF v_motivo IS NOT NULL THEN
+      INSERT INTO public.pendencias_importacao
+        (importacao_id,linha,codigo_rota,parada_id,valor_bruto,motivo)
+      VALUES (p_importacao_id,v_ord,v_cod,v_id_parada,v_valor,v_motivo)
+      ON CONFLICT (importacao_id,linha) DO NOTHING;
+      v_pendencias := v_pendencias + 1;
+      CONTINUE;
+    END IF;
+
+    -- Evita concorrencia que criaria duas origens para o mesmo numero.
+    PERFORM pg_advisory_xact_lock(hashtextextended(v_numero,0));
+    IF v_serie IS NULL THEN
+      SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
+        FROM public.notas_fiscais WHERE numero=v_numero;
+      IF v_cont > 1 THEN
+        v_motivo := 'SERIE_AMBIGUA';
+      ELSIF v_cont = 0 THEN
+        SELECT serie_padrao INTO STRICT v_serie
+          FROM public.sla_config WHERE id IS TRUE;
+        v_serie_assumida := true;
+      END IF;
+    ELSE
+      SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
+        FROM public.notas_fiscais
+        WHERE numero=v_numero AND serie=v_serie;
+      IF v_cont > 1 THEN v_motivo := 'SERIE_AMBIGUA'; END IF;
+    END IF;
+    IF v_motivo IS NOT NULL THEN
+      INSERT INTO public.pendencias_importacao
+        (importacao_id,linha,codigo_rota,parada_id,valor_bruto,motivo)
+      VALUES (p_importacao_id,v_ord,v_cod,v_id_parada,v_valor,v_motivo)
+      ON CONFLICT (importacao_id,linha) DO NOTHING;
+      v_pendencias := v_pendencias + 1;
+      CONTINUE;
+    END IF;
+    IF v_nf_id IS NULL THEN
+      -- Primeira NF: série explícita ou padrão assumida, com origem fiscal fixa.
+      INSERT INTO public.notas_fiscais
+        (numero,serie,chave_acesso,romaneio_origem,origem_rota_id)
+      VALUES (v_numero,v_serie,v_chave,v_rom,v_rota_id)
+      ON CONFLICT DO NOTHING
+      RETURNING id INTO v_nf_id;
+      IF v_nf_id IS NOT NULL THEN v_nfs := v_nfs + 1; END IF;
+      IF v_nf_id IS NULL THEN
+        SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
+          FROM public.notas_fiscais WHERE numero=v_numero AND serie=v_serie;
+        IF v_cont <> 1 THEN
+          RAISE EXCEPTION 'NF % série % teve colisão não resolvida; importação cancelada',v_numero,v_serie;
+        END IF;
+      END IF;
+    END IF;
+    -- Informativa e já tratada: a origem foi registrada com série padrão.
+    IF v_serie_assumida THEN
+      INSERT INTO public.pendencias_importacao
+        (importacao_id,linha,codigo_rota,parada_id,valor_bruto,motivo,status,tratada_por,tratada_em)
+      VALUES (p_importacao_id,v_ord,v_cod,v_id_parada,v_valor,
+        'SERIE_ASSUMIDA','TRATADA',v_usuario,clock_timestamp())
+      ON CONFLICT (importacao_id,linha) DO NOTHING;
+      v_pendencias := v_pendencias + 1;
+    END IF;
+    SELECT origem_rota_id,romaneio_origem INTO STRICT v_nf_origem,v_rom_origem
+      FROM public.notas_fiscais WHERE id=v_nf_id;
+    -- Guard do schema impede qualquer update de origem/número/série.
+    INSERT INTO public.parada_notas(parada_id,nf_id,importacao_id)
+    VALUES (v_id_parada,v_nf_id,p_importacao_id)
+    ON CONFLICT (parada_id,nf_id) DO NOTHING;
+    v_tipo_execucao := CASE
+      WHEN v_nf_origem=v_rota_id AND NOT v_vt THEN 'CARGA'
+      WHEN v_vt THEN 'TRANSFERENCIA' ELSE 'REENTREGA' END;
+    -- O schema permite apenas uma execucao aberta por NF; ao mudar de rota,
+    -- encerra a execucao anterior sem jamais alterar a origem fiscal.
+    IF NOT EXISTS (
+      SELECT 1 FROM public.nf_execucoes
+      WHERE nf_id=v_nf_id AND rota_id=v_rota_id
+    ) THEN
+      UPDATE public.nf_execucoes
+        SET encerrada_em=clock_timestamp()
+      WHERE nf_id=v_nf_id AND rota_id IS DISTINCT FROM v_rota_id
+        AND encerrada_em IS NULL;
+    END IF;
+    INSERT INTO public.nf_execucoes(nf_id,rota_id,tipo,registrada_por)
+    VALUES (v_nf_id,v_rota_id,v_tipo_execucao,v_usuario)
+    ON CONFLICT (nf_id,rota_id) DO NOTHING;
+    IF FOUND THEN v_execucoes:=v_execucoes+1; END IF;
+    -- Vínculo fiscal único continua na prestação da rota de ORIGEM.
+    IF v_rom_origem IS NOT NULL AND v_nf_origem IS NOT NULL THEN
+      SELECT id INTO v_prestacao_id FROM public.prestacoes WHERE romaneio_oficial=v_rom_origem;
+      IF v_prestacao_id IS NOT NULL THEN
+        INSERT INTO public.prestacao_notas(prestacao_id,nf_id)
+        VALUES (v_prestacao_id,v_nf_id)
+        ON CONFLICT (nf_id) DO NOTHING;
+      END IF;
+    END IF;
+  END LOOP;
+  RETURN jsonb_build_object('status','IMPORTADO', 'importacao_id',p_importacao_id,
+    'linhas',v_total,'prestacoes_novas',v_novos,
+    'notas_novas',v_nfs,'execucoes_novas',v_execucoes,
+    'pendencias_novas',v_pendencias);
+END;
+$sigo$;
+
+REVOKE ALL ON FUNCTION public.sigo_importar_stopview(uuid,jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sigo_importar_stopview(uuid,jsonb)
+  TO authenticated;
+;
+    v_oficial := NOT v_vt AND v_rom !~ '^(.)\1{11}$' AND v_rom NOT LIKE '6000000000%';
+    INSERT INTO public.rotas (data_rota,codigo,romaneio_gm,tipo_romaneio,
+      motorista_gm,importacao_id)
+    VALUES (v_data,v_cod,v_rom,
+      CASE WHEN v_oficial THEN 'OFICIAL' ELSE 'AUXILIAR' END,
+      NULLIF(btrim(coalesce(v_linha->>'Motoristas',v_linha->>'Motorista','')),''),
+      p_importacao_id)
+    ON CONFLICT (data_rota,codigo) DO NOTHING;
+    SELECT id INTO STRICT v_rota_id FROM public.rotas
+      WHERE data_rota=v_data AND codigo=v_cod;
+    IF EXISTS(SELECT 1 FROM public.rotas WHERE id=v_rota_id
+      AND romaneio_gm IS DISTINCT FROM v_rom) THEN
+      RAISE EXCEPTION 'StopView: rota % em % já possui outro romaneio; revisão obrigatória',v_cod,v_data;
+    END IF;
+    INSERT INTO public.paradas (id,rota_id,data_rota,codigo_rota,
+      codigo_localidade,cliente,status_gm,importacao_id)
+    VALUES (v_id_parada,v_rota_id,v_data,v_cod,
+      NULLIF(btrim(v_linha->>'Código da Localidade'),''),
+      NULLIF(btrim(coalesce(v_linha->>'Cliente',v_linha->>'Nome da Localidade','')),''),
+      NULLIF(btrim(v_linha->>'Status'),''),
+      p_importacao_id)
+    ON CONFLICT (id) DO NOTHING;
+    SELECT rota_id INTO STRICT v_parada_rota FROM public.paradas WHERE id=v_id_parada;
+    IF v_parada_rota IS DISTINCT FROM v_rota_id THEN
+      RAISE EXCEPTION 'StopView: id de parada % pertence a outra rota',v_id_parada;
+    END IF;
+    IF v_oficial THEN
+      INSERT INTO public.prestacoes (romaneio_oficial,d0,status,responsavel_id)
+      VALUES (v_rom,v_data,'ABERTA',v_usuario)
+      ON CONFLICT (romaneio_oficial) DO NOTHING
+      RETURNING id INTO v_prestacao_id;
+      IF v_prestacao_id IS NOT NULL THEN v_novos := v_novos + 1; END IF;
+      SELECT id,d0 INTO STRICT v_prestacao_id,v_prestacao_d0
+        FROM public.prestacoes WHERE romaneio_oficial=v_rom;
+      IF v_prestacao_d0 IS DISTINCT FROM v_data THEN
+        RAISE EXCEPTION 'Romaneio % já cadastrado com D0 diferente',v_rom;
+      END IF;
+    END IF;
+  END LOOP;
+
+  -- 2) Processar as NFs pelo valor original, sem gerar NF artificial.
+  FOR v_linha, v_ord IN
+    SELECT a.value, a.ordinality FROM jsonb_array_elements(p_linhas->'linhas')
+      WITH ORDINALITY AS a(value, ordinality)
+  LOOP
+    v_cod := btrim(v_linha->>'Código da rota');
+    v_rom := btrim(v_linha->>'Descrição da rota');
+    v_data := (v_linha->>'Data da Rota')::date;
+    v_id_parada := (v_linha->>'id')::bigint;
+    v_valor := btrim(coalesce(v_linha->>'stop.orders.number',''));
+    v_vt := upper(v_cod) ~ '(^|[-_])VT($|[-_A-Z0-9])' OR upper(v_cod) ~ '^SP-[0-9]+VT[A-Z0-9]*
+    v_motivo := NULL;
+    v_numero := NULL; v_serie := NULL; v_chave := NULL; v_nf_id := NULL;
+    v_serie_assumida := false;
+    SELECT id INTO STRICT v_rota_id FROM public.rotas
+      WHERE data_rota=v_data AND codigo=v_cod;
+
+    -- Identificar transferência VT antes de tratar valor curto como NF inválida.
+    IF v_vt AND v_valor ~ '^[0-9]{1,2}$' THEN
+      v_motivo := 'TRANSFERENCIA';
+    ELSIF v_valor = '' OR v_valor ~ '^[0-9]{1,2}$' THEN
+      v_motivo := 'SEM_NF';
+    ELSIF v_valor ~ '^[0-9]{44}$' THEN
+      v_numero := substring(v_valor from 26 for 9);
+      v_serie := (substring(v_valor from 23 for 3)::integer)::text;
+      v_chave := v_valor;
+    ELSIF v_valor ~ '^[0-9]{1,9}-[0-9]{1,3}$' THEN
+      v_numero := lpad(split_part(v_valor,'-',1),9,'0');
+      v_serie := (split_part(v_valor,'-',2)::integer)::text;
+    ELSIF v_valor ~ '^[0-9]{1,9}$' THEN
+      v_numero := lpad(v_valor,9,'0');
+    ELSE
+      v_motivo := 'NF_INVALIDA';
+    END IF;
+    IF v_motivo IS NOT NULL THEN
+      INSERT INTO public.pendencias_importacao
+        (importacao_id,linha,codigo_rota,parada_id,valor_bruto,motivo)
+      VALUES (p_importacao_id,v_ord,v_cod,v_id_parada,v_valor,v_motivo)
+      ON CONFLICT (importacao_id,linha) DO NOTHING;
+      v_pendencias := v_pendencias + 1;
+      CONTINUE;
+    END IF;
+
+    -- Evita concorrencia que criaria duas origens para o mesmo numero.
+    PERFORM pg_advisory_xact_lock(hashtextextended(v_numero,0));
+    IF v_serie IS NULL THEN
+      SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
+        FROM public.notas_fiscais WHERE numero=v_numero;
+      IF v_cont > 1 THEN
+        v_motivo := 'SERIE_AMBIGUA';
+      ELSIF v_cont = 0 THEN
+        SELECT serie_padrao INTO STRICT v_serie
+          FROM public.sla_config WHERE id IS TRUE;
+        v_serie_assumida := true;
+      END IF;
+    ELSE
+      SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
+        FROM public.notas_fiscais
+        WHERE numero=v_numero AND serie=v_serie;
+      IF v_cont > 1 THEN v_motivo := 'SERIE_AMBIGUA'; END IF;
+    END IF;
+    IF v_motivo IS NOT NULL THEN
+      INSERT INTO public.pendencias_importacao
+        (importacao_id,linha,codigo_rota,parada_id,valor_bruto,motivo)
+      VALUES (p_importacao_id,v_ord,v_cod,v_id_parada,v_valor,v_motivo)
+      ON CONFLICT (importacao_id,linha) DO NOTHING;
+      v_pendencias := v_pendencias + 1;
+      CONTINUE;
+    END IF;
+    IF v_nf_id IS NULL THEN
+      -- Primeira NF: série explícita ou padrão assumida, com origem fiscal fixa.
+      INSERT INTO public.notas_fiscais
+        (numero,serie,chave_acesso,romaneio_origem,origem_rota_id)
+      VALUES (v_numero,v_serie,v_chave,v_rom,v_rota_id)
+      ON CONFLICT DO NOTHING
+      RETURNING id INTO v_nf_id;
+      IF v_nf_id IS NOT NULL THEN v_nfs := v_nfs + 1; END IF;
+      IF v_nf_id IS NULL THEN
+        SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
+          FROM public.notas_fiscais WHERE numero=v_numero AND serie=v_serie;
+        IF v_cont <> 1 THEN
+          RAISE EXCEPTION 'NF % série % teve colisão não resolvida; importação cancelada',v_numero,v_serie;
+        END IF;
+      END IF;
+    END IF;
+    -- Informativa e já tratada: a origem foi registrada com série padrão.
+    IF v_serie_assumida THEN
+      INSERT INTO public.pendencias_importacao
+        (importacao_id,linha,codigo_rota,parada_id,valor_bruto,motivo,status,tratada_por,tratada_em)
+      VALUES (p_importacao_id,v_ord,v_cod,v_id_parada,v_valor,
+        'SERIE_ASSUMIDA','TRATADA',v_usuario,clock_timestamp())
+      ON CONFLICT (importacao_id,linha) DO NOTHING;
+      v_pendencias := v_pendencias + 1;
+    END IF;
+    SELECT origem_rota_id,romaneio_origem INTO STRICT v_nf_origem,v_rom_origem
+      FROM public.notas_fiscais WHERE id=v_nf_id;
+    -- Guard do schema impede qualquer update de origem/número/série.
+    INSERT INTO public.parada_notas(parada_id,nf_id,importacao_id)
+    VALUES (v_id_parada,v_nf_id,p_importacao_id)
+    ON CONFLICT (parada_id,nf_id) DO NOTHING;
+    v_tipo_execucao := CASE
+      WHEN v_nf_origem=v_rota_id AND NOT v_vt THEN 'CARGA'
+      WHEN v_vt THEN 'TRANSFERENCIA' ELSE 'REENTREGA' END;
+    -- O schema permite apenas uma execucao aberta por NF; ao mudar de rota,
+    -- encerra a execucao anterior sem jamais alterar a origem fiscal.
+    IF NOT EXISTS (
+      SELECT 1 FROM public.nf_execucoes
+      WHERE nf_id=v_nf_id AND rota_id=v_rota_id
+    ) THEN
+      UPDATE public.nf_execucoes
+        SET encerrada_em=clock_timestamp()
+      WHERE nf_id=v_nf_id AND rota_id IS DISTINCT FROM v_rota_id
+        AND encerrada_em IS NULL;
+    END IF;
+    INSERT INTO public.nf_execucoes(nf_id,rota_id,tipo,registrada_por)
+    VALUES (v_nf_id,v_rota_id,v_tipo_execucao,v_usuario)
+    ON CONFLICT (nf_id,rota_id) DO NOTHING;
+    IF FOUND THEN v_execucoes:=v_execucoes+1; END IF;
+    -- Vínculo fiscal único continua na prestação da rota de ORIGEM.
+    IF v_rom_origem IS NOT NULL AND v_nf_origem IS NOT NULL THEN
+      SELECT id INTO v_prestacao_id FROM public.prestacoes WHERE romaneio_oficial=v_rom_origem;
+      IF v_prestacao_id IS NOT NULL THEN
+        INSERT INTO public.prestacao_notas(prestacao_id,nf_id)
+        VALUES (v_prestacao_id,v_nf_id)
+        ON CONFLICT (nf_id) DO NOTHING;
+      END IF;
+    END IF;
+  END LOOP;
+  RETURN jsonb_build_object('status','IMPORTADO', 'importacao_id',p_importacao_id,
+    'linhas',v_total,'prestacoes_novas',v_novos,
+    'notas_novas',v_nfs,'execucoes_novas',v_execucoes,
+    'pendencias_novas',v_pendencias);
+END;
+$sigo$;
+
+REVOKE ALL ON FUNCTION public.sigo_importar_stopview(uuid,jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sigo_importar_stopview(uuid,jsonb)
+  TO authenticated;
+;
     v_motivo := NULL;
     v_numero := NULL; v_serie := NULL; v_chave := NULL; v_nf_id := NULL;
     v_serie_assumida := false;
