@@ -60,8 +60,8 @@ BEGIN
      (v_resultado->>'linhas')::int <> 15 OR
      (v_resultado->>'prestacoes_novas')::int <> 2 OR
      (v_resultado->>'notas_novas')::int <> 7 OR
-     (v_resultado->>'execucoes_novas')::int <> 9 OR
-     (v_resultado->>'pendencias_novas')::int <> 11 THEN
+     (v_resultado->>'execucoes_novas')::int <> 8 OR
+     (v_resultado->>'pendencias_novas')::int <> 9 THEN
     RAISE EXCEPTION 'Resumo importacao incorreto: %',v_resultado;
   END IF;
   SELECT count(*) INTO v_count FROM public.gm_importacoes;
@@ -73,7 +73,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.notas_fiscais;
   IF v_count <> 7 THEN RAISE EXCEPTION 'Esperadas 7 NFs, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes;
-  IF v_count <> 9 THEN RAISE EXCEPTION 'Esperadas 9 execucoes, obtido %',v_count; END IF;
+  IF v_count <> 8 THEN RAISE EXCEPTION 'Esperadas 8 execucoes, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao WHERE motivo='SERIE_AMBIGUA';
   IF v_count <> 0 THEN RAISE EXCEPTION 'Sem series concorrentes nao deve existir SERIE_AMBIGUA'; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao
@@ -83,7 +83,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.pendencias_importacao WHERE motivo='SEM_NF';
   IF v_count <> 3 THEN RAISE EXCEPTION 'Esperados 3 vazios, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao WHERE motivo='TRANSFERENCIA';
-  IF v_count <> 2 THEN RAISE EXCEPTION 'Esperados 2 VT com valor 5, obtido %',v_count; END IF;
+  IF v_count <> 0 THEN RAISE EXCEPTION 'VT abastecimento não deve gerar pendência de transferência'; END IF;
   SELECT count(*) INTO v_count FROM public.prestacao_notas;
   IF v_count <> 7 THEN RAISE EXCEPTION 'Esperados 7 canhotos de origem, obtido %',v_count; END IF;
 
@@ -91,16 +91,21 @@ BEGIN
     WHERE numero='005605465' AND serie='7';
   IF v_origem <> '123456789012' THEN RAISE EXCEPTION 'Origem fiscal foi alterada: %',v_origem; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes WHERE nf_id=v_nf_id;
-  IF v_count <> 3 THEN RAISE EXCEPTION 'NF duplicada deveria ter tres execucoes, obtido %',v_count; END IF;
+  IF v_count <> 2 THEN RAISE EXCEPTION 'NF deve ter duas execuções de entrega, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes
     WHERE nf_id=v_nf_id AND encerrada_em IS NULL;
   IF v_count <> 1 THEN RAISE EXCEPTION 'NF deve ter exatamente uma execução aberta'; END IF;
   SELECT tipo INTO STRICT v_tipo FROM public.nf_execucoes
     WHERE nf_id=v_nf_id AND rota_id=(SELECT id FROM public.rotas WHERE codigo='SP-2');
   IF v_tipo <> 'REENTREGA' THEN RAISE EXCEPTION 'Segunda rota nao marcada REENTREGA'; END IF;
-  SELECT tipo INTO STRICT v_tipo FROM public.nf_execucoes
-    WHERE nf_id=v_nf_id AND rota_id=(SELECT id FROM public.rotas WHERE codigo='VT-1');
-  IF v_tipo <> 'TRANSFERENCIA' THEN RAISE EXCEPTION 'Rota VT nao marcada TRANSFERENCIA'; END IF;
+  IF EXISTS(SELECT 1 FROM public.nf_execucoes e
+      JOIN public.rotas r ON r.id=e.rota_id WHERE r.codigo='VT-1') THEN
+    RAISE EXCEPTION 'Abastecimento VT não pode gerar execução fiscal';
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM public.rotas
+      WHERE codigo='VT-1' AND tipo_rota='ABASTECIMENTO') THEN
+    RAISE EXCEPTION 'VT-1 deve ser ABASTECIMENTO';
+  END IF;
 
   -- Reimportar mesmos bytes, com ID diferente: nenhuma tabela cresce.
   v_resultado := public.sigo_importar_stopview(
@@ -113,7 +118,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.pendencias_importacao;
   IF v_count <> 11 THEN RAISE EXCEPTION 'Replay duplicou pendencias'; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes;
-  IF v_count <> 9 THEN RAISE EXCEPTION 'Replay duplicou execucoes'; END IF;
+  IF v_count <> 8 THEN RAISE EXCEPTION 'Replay duplicou execucoes'; END IF;
 
   -- Contrato obrigatório: ausência de coluna cancela TODO o lote.
   v_bloqueado := false;
@@ -218,48 +223,46 @@ BEGIN
       AND motivo='SERIE_ASSUMIDA';
   IF v_count <> 5 THEN RAISE EXCEPTION 'P1: replay criou pendências extras'; END IF;
 
-  -- P2: códigos de rota efetivamente reportados no CSV de 16/11:
-  -- SP-1VTVU004 e SP-1VTVU005. Os IDs/romaneios dos testes são sintéticos,
-  -- pois o arquivo bruto não está disponível neste ambiente.
+  -- Regressão da regra nova: ambos VTVU são ABASTECIMENTO, não
+  -- transferência de NF. CROSS-ZL chega ao nosso cross; CROSS-ZS, não.
   v_payload := jsonb_build_object(
     'arquivo_nome','StopView-VTVU-16-11-2026.csv',
     'sha256',repeat('e',64),
     'linhas',jsonb_build_array(
-      jsonb_build_object(
-        'id','3001', 'Código da rota','SP-1VTVU004',
+      jsonb_build_object('id','3001', 'Código da rota','SP-1VTVU004',
         'Descrição da rota','333333333333','Data da Rota','2026-11-16',
+        'Código da Localidade','CROSS-ZS',
         'stop.orders.number','5','routeView.route.key','SP-1VTVU004',
-        'routeView.route.date','2026-11-16'
-      ),
-      jsonb_build_object(
-        'id','3002', 'Código da rota','SP-1VTVU005',
+        'routeView.route.date','2026-11-16'),
+      jsonb_build_object('id','3002', 'Código da rota','SP-1VTVU005',
         'Descrição da rota','333333333334','Data da Rota','2026-11-16',
+        'Código da Localidade','CROSS-ZL',
         'stop.orders.number','5','routeView.route.key','SP-1VTVU005',
-        'routeView.route.date','2026-11-16'
-      )
+        'routeView.route.date','2026-11-16')
     )
   );
   v_resultado := public.sigo_importar_stopview(
     '99999999-9999-4999-8999-999999999999',v_payload);
   IF v_resultado->>'status' <> 'IMPORTADO'
-    OR (v_resultado->>'pendencias_novas')::int <> 2
-    OR (v_resultado->>'notas_novas')::int <> 0 THEN
-    RAISE EXCEPTION 'P2: duas rotas VTVU com valor 5 devem gerar duas transferências: %',v_resultado;
+    OR (v_resultado->>'pendencias_novas')::int <> 0
+    OR (v_resultado->>'notas_novas')::int <> 0
+    OR (v_resultado->>'execucoes_novas')::int <> 0 THEN
+    RAISE EXCEPTION 'VTVU é abastecimento, não transferência fiscal: %',v_resultado;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.rotas
+    WHERE codigo IN ('SP-1VTVU004','SP-1VTVU005')
+      AND tipo_rota='ABASTECIMENTO';
+  IF v_count <> 2 THEN RAISE EXCEPTION 'Duas rotas VTVU devem ser ABASTECIMENTO'; END IF;
+  SELECT count(*) INTO v_count FROM public.v_chegadas_vuc
+    WHERE codigo_rota='SP-1VTVU005' AND localidade_destino='CROSS-ZL'
+      AND valor_bruto_pedido='5';
+  IF v_count <> 1 THEN RAISE EXCEPTION 'VUC de CROSS-ZL deve gerar uma chegada'; END IF;
+  IF EXISTS(SELECT 1 FROM public.v_chegadas_vuc WHERE codigo_rota='SP-1VTVU004') THEN
+    RAISE EXCEPTION 'VUC de CROSS-ZS não pode aparecer em chegadas CROSS-ZL';
   END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao
-    WHERE importacao_id='99999999-9999-4999-8999-999999999999'::uuid
-      AND codigo_rota IN ('SP-1VTVU004','SP-1VTVU005')
-      AND valor_bruto='5'
-      AND motivo='TRANSFERENCIA' AND status='PENDENTE';
-  IF v_count <> 2 THEN
-    RAISE EXCEPTION 'P2: esperadas duas transferências das rotas VTVU, obtido %',v_count;
-  END IF;
-  SELECT count(*) INTO v_count FROM public.pendencias_importacao
-    WHERE importacao_id='99999999-9999-4999-8999-999999999999'::uuid
-      AND motivo='SEM_NF';
-  IF v_count <> 0 THEN
-    RAISE EXCEPTION 'P2: paradas VTVU não podem ser classificadas SEM_NF';
-  END IF;
+    WHERE importacao_id='99999999-9999-4999-8999-999999999999'::uuid;
+  IF v_count <> 0 THEN RAISE EXCEPTION 'VTVU não pode gerar pendências'; END IF;
 
   -- Número com DUAS séries existentes é a única condição de SERIE_AMBIGUA.
   INSERT INTO public.notas_fiscais (numero,serie)
