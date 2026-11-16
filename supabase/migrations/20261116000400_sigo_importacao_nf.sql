@@ -1,13 +1,13 @@
 -- SIGO Etapa 3: importacao StopView atomica, sem alterar a origem fiscal existente.
 -- Executar somente em banco descartavel no CI ate reconciliar migrations do Supabase hospedado.
 
-CREATE TABLE IF NOT EXISTS public.pendencias_importacao (
+()=>ddl+"CREATE TABLE IF NOT EXISTS public.pendencias_importacao ("
   importacao_id uuid NOT NULL REFERENCES public.gm_importacoes(id),
   linha integer NOT NULL CHECK (linha > 0),
   codigo_rota text NOT NULL,
   parada_id bigint,
   valor_bruto text,
-  motivo text NOT NULL CHECK (motivo IN ('SEM_NF', 'TRANSFERENCIA', 'SERIE_AMBIGUA', 'NF_INVALIDA')),
+  motivo text NOT NULL CHECK (motivo IN ('SEM_NF', 'TRANSFERENCIA', 'SERIE_AMBIGUA', 'SERIE_ASSUMIDA', 'NF_INVALIDA')),
   status text NOT NULL DEFAULT 'PENDENTE' CHECK (status IN ('PENDENTE', 'TRATADA')),
   tratada_por uuid REFERENCES auth.users(id),
   tratada_em timestamptz,
@@ -53,6 +53,7 @@ DECLARE
   v_valor text;
   v_numero text;
   v_serie text;
+  v_serie_assumida boolean;
   v_chave text;
   v_vt boolean;
   v_oficial boolean;
@@ -151,7 +152,7 @@ BEGIN
     v_rom := btrim(v_linha->>'Descrição da rota');
     v_data := (v_linha->>'Data da Rota')::date;
     v_id_parada := (v_linha->>'id')::bigint;
-    v_vt := upper(v_cod) ~ '(^|[-_])VT($|[-_0-9])';
+    v_vt := upper(v_cod) ~ '(^|[-_0-9])VT($|[-_0-9])';
     v_oficial := NOT v_vt AND v_rom !~ '^(.)\1{11}$' AND v_rom NOT LIKE '6000000000%';
     INSERT INTO public.rotas (data_rota,codigo,romaneio_gm,tipo_romaneio,
       motorista_gm,importacao_id)
@@ -202,16 +203,18 @@ BEGIN
     v_data := (v_linha->>'Data da Rota')::date;
     v_id_parada := (v_linha->>'id')::bigint;
     v_valor := btrim(coalesce(v_linha->>'stop.orders.number',''));
-    v_vt := upper(v_cod) ~ '(^|[-_])VT($|[-_0-9])';
+    v_vt := upper(v_cod) ~ '(^|[-_0-9])VT($|[-_0-9])';
     v_motivo := NULL;
     v_numero := NULL; v_serie := NULL; v_chave := NULL; v_nf_id := NULL;
+    v_serie_assumida := false;
     SELECT id INTO STRICT v_rota_id FROM public.rotas
       WHERE data_rota=v_data AND codigo=v_cod;
 
-    IF v_valor = '' THEN
+    -- Identificar transferência VT antes de tratar valor curto como NF inválida.
+    IF v_vt AND v_valor ~ '^[0-9]{1,2}$' THEN
+      v_motivo := 'TRANSFERENCIA';
+    ELSIF v_valor = '' OR v_valor ~ '^[0-9]{1,2}$' THEN
       v_motivo := 'SEM_NF';
-    ELSIF v_valor ~ '^[0-9]{1,2}$' THEN
-      v_motivo := CASE WHEN v_vt THEN 'TRANSFERENCIA' ELSE 'SEM_NF' END;
     ELSIF v_valor ~ '^[0-9]{44}$' THEN
       v_numero := substring(v_valor from 26 for 9);
       v_serie := (substring(v_valor from 23 for 3)::integer)::text;
@@ -238,7 +241,13 @@ BEGIN
     IF v_serie IS NULL THEN
       SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
         FROM public.notas_fiscais WHERE numero=v_numero;
-      IF v_cont <> 1 THEN v_motivo := 'SERIE_AMBIGUA'; END IF;
+      IF v_cont > 1 THEN
+        v_motivo := 'SERIE_AMBIGUA';
+      ELSIF v_cont = 0 THEN
+        SELECT serie_padrao INTO STRICT v_serie
+          FROM public.sla_config WHERE id IS TRUE;
+        v_serie_assumida := true;
+      END IF;
     ELSE
       SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
         FROM public.notas_fiscais
@@ -254,7 +263,7 @@ BEGIN
       CONTINUE;
     END IF;
     IF v_nf_id IS NULL THEN
-      -- Somente identificacao com serie permite criar a primeira NF.
+      -- Primeira NF: série explícita ou padrão assumida, com origem fiscal fixa.
       INSERT INTO public.notas_fiscais
         (numero,serie,chave_acesso,romaneio_origem,origem_rota_id)
       VALUES (v_numero,v_serie,v_chave,v_rom,v_rota_id)
@@ -268,6 +277,15 @@ BEGIN
           RAISE EXCEPTION 'NF % série % teve colisão não resolvida; importação cancelada',v_numero,v_serie;
         END IF;
       END IF;
+    END IF;
+    -- Informativa e já tratada: a origem foi registrada com série padrão.
+    IF v_serie_assumida THEN
+      INSERT INTO public.pendencias_importacao
+        (importacao_id,linha,codigo_rota,parada_id,valor_bruto,motivo,status,tratada_por,tratada_em)
+      VALUES (p_importacao_id,v_ord,v_cod,v_id_parada,v_valor,
+        'SERIE_ASSUMIDA','TRATADA',v_usuario,clock_timestamp())
+      ON CONFLICT (importacao_id,linha) DO NOTHING;
+      v_pendencias := v_pendencias + 1;
     END IF;
     SELECT origem_rota_id,romaneio_origem INTO STRICT v_nf_origem,v_rom_origem
       FROM public.notas_fiscais WHERE id=v_nf_id;
