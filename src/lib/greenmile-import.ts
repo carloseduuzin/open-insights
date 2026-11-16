@@ -199,7 +199,7 @@ export function prepararLinhasStopView(paradas: ResultadoCSV, pedidos: Resultado
     linhas.push({
       ...parada, id,
       "Código da rota": codigo,
-      "Descrição da rota": parada["Descrição da rota"].trim(),
+      "Descrição da rota": (parada["Descrição da rota"] ?? "").trim(),
       "Data da Rota": data,
       "routeView.route.key": pedido["routeView.route.key"],
       "routeView.route.date": data,
@@ -211,8 +211,8 @@ export function prepararLinhasStopView(paradas: ResultadoCSV, pedidos: Resultado
     // Parada sem pedido não pode desaparecer: gerará uma pendência SEM_NF.
     linhas.push({
       ...parada, id,
-      "Código da rota": parada["Código da rota"].trim(),
-      "Descrição da rota": parada["Descrição da rota"].trim(),
+      "Código da rota": (parada["Código da rota"] ?? "").trim(),
+      "Descrição da rota": (parada["Descrição da rota"] ?? "").trim(),
       "Data da Rota": (parada["Data da Rota"] ?? "").slice(0, 10),
       "stop.orders.number": "",
     });
