@@ -88,6 +88,9 @@ BEGIN
   IF v_origem <> '123456789012' THEN RAISE EXCEPTION 'Origem fiscal foi alterada: %',v_origem; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes WHERE nf_id=v_nf_id;
   IF v_count <> 3 THEN RAISE EXCEPTION 'NF duplicada deveria ter tres execucoes, obtido %',v_count; END IF;
+  SELECT count(*) INTO v_count FROM public.nf_execucoes
+    WHERE nf_id=v_nf_id AND encerrada_em IS NULL;
+  IF v_count <> 1 THEN RAISE EXCEPTION 'NF deve ter exatamente uma execução aberta'; END IF;
   SELECT tipo INTO STRICT v_tipo FROM public.nf_execucoes
     WHERE nf_id=v_nf_id AND rota_id=(SELECT id FROM public.rotas WHERE codigo='SP-2');
   IF v_tipo <> 'REENTREGA' THEN RAISE EXCEPTION 'Segunda rota nao marcada REENTREGA'; END IF;
