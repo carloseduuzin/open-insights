@@ -76,7 +76,7 @@ jobs:
             SELECT count(*) INTO v_functions FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname LIKE 'sigo_%';
             SELECT count(*) INTO v_policies FROM pg_policies WHERE schemaname='public';
             SELECT count(*) INTO v_triggers FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal;
-            IF v_tables <> 14 OR v_views <> 3 OR v_functions <> 15 OR v_policies <> 33 OR v_triggers <> 7 THEN
+            IF v_tables <> 15 OR v_views <> 3 OR v_functions <> 16 OR v_policies <> 34 OR v_triggers <> 7 THEN
               RAISE EXCEPTION 'Unexpected schema inventory: tables %, views %, functions %, policies %, triggers %', v_tables,v_views,v_functions,v_policies,v_triggers;
             END IF;
           END;
