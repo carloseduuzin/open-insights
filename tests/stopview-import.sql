@@ -218,32 +218,47 @@ BEGIN
       AND motivo='SERIE_ASSUMIDA';
   IF v_count <> 5 THEN RAISE EXCEPTION 'P1: replay criou pendências extras'; END IF;
 
-  -- P2: formato realista SP-1VT69 (VT após saída numérica);
-  -- o valor 5 deve ser TRANSFERENCIA, não SEM_NF, mesmo sem série/NF.
+  -- P2: códigos de rota efetivamente reportados no CSV de 16/11:
+  -- SP-1VTVU004 e SP-1VTVU005. Os IDs/romaneios dos testes são sintéticos,
+  -- pois o arquivo bruto não está disponível neste ambiente.
   v_payload := jsonb_build_object(
-    'arquivo_nome','StopView-VT-16-11-2026.csv',
+    'arquivo_nome','StopView-VTVU-16-11-2026.csv',
     'sha256',repeat('e',64),
-    'linhas',jsonb_build_array(jsonb_build_object(
-      'id','3001', 'Código da rota','SP-1VT69',
-      'Descrição da rota','333333333333','Data da Rota','2026-11-16',
-      'stop.orders.number','5','routeView.route.key','SP-1VT69',
-      'routeView.route.date','2026-11-16'
-    ))
+    'linhas',jsonb_build_array(
+      jsonb_build_object(
+        'id','3001', 'Código da rota','SP-1VTVU004',
+        'Descrição da rota','333333333333','Data da Rota','2026-11-16',
+        'stop.orders.number','5','routeView.route.key','SP-1VTVU004',
+        'routeView.route.date','2026-11-16'
+      ),
+      jsonb_build_object(
+        'id','3002', 'Código da rota','SP-1VTVU005',
+        'Descrição da rota','333333333334','Data da Rota','2026-11-16',
+        'stop.orders.number','5','routeView.route.key','SP-1VTVU005',
+        'routeView.route.date','2026-11-16'
+      )
+    )
   );
   v_resultado := public.sigo_importar_stopview(
     '99999999-9999-4999-8999-999999999999',v_payload);
   IF v_resultado->>'status' <> 'IMPORTADO'
-    OR (v_resultado->>'pendencias_novas')::int <> 1
+    OR (v_resultado->>'pendencias_novas')::int <> 2
     OR (v_resultado->>'notas_novas')::int <> 0 THEN
-    RAISE EXCEPTION 'P2: VT 5 deve gerar só uma pendência: %',v_resultado;
+    RAISE EXCEPTION 'P2: duas rotas VTVU com valor 5 devem gerar duas transferências: %',v_resultado;
   END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM public.pendencias_importacao
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
     WHERE importacao_id='99999999-9999-4999-8999-999999999999'::uuid
-      AND codigo_rota='SP-1VT69' AND valor_bruto='5'
-      AND motivo='TRANSFERENCIA' AND status='PENDENTE'
-  ) THEN
-    RAISE EXCEPTION 'P2: valor 5 em VT foi classificado incorretamente';
+      AND codigo_rota IN ('SP-1VTVU004','SP-1VTVU005')
+      AND valor_bruto='5'
+      AND motivo='TRANSFERENCIA' AND status='PENDENTE';
+  IF v_count <> 2 THEN
+    RAISE EXCEPTION 'P2: esperadas duas transferências das rotas VTVU, obtido %',v_count;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.pendencias_importacao
+    WHERE importacao_id='99999999-9999-4999-8999-999999999999'::uuid
+      AND motivo='SEM_NF';
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'P2: paradas VTVU não podem ser classificadas SEM_NF';
   END IF;
 
   -- Número com DUAS séries existentes é a única condição de SERIE_AMBIGUA.
