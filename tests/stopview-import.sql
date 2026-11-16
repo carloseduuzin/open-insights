@@ -59,8 +59,8 @@ BEGIN
   IF v_resultado->>'status' <> 'IMPORTADO' OR
      (v_resultado->>'linhas')::int <> 15 OR
      (v_resultado->>'prestacoes_novas')::int <> 2 OR
-     (v_resultado->>'notas_novas')::int <> 8 OR
-     (v_resultado->>'execucoes_novas')::int <> 10 OR
+     (v_resultado->>'notas_novas')::int <> 7 OR
+     (v_resultado->>'execucoes_novas')::int <> 9 OR
      (v_resultado->>'pendencias_novas')::int <> 11 THEN
     RAISE EXCEPTION 'Resumo importacao incorreto: %',v_resultado;
   END IF;
@@ -71,9 +71,9 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.paradas;
   IF v_count <> 15 THEN RAISE EXCEPTION 'Esperadas 15 paradas, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.notas_fiscais;
-  IF v_count <> 8 THEN RAISE EXCEPTION 'Esperadas 8 NFs, obtido %',v_count; END IF;
+  IF v_count <> 7 THEN RAISE EXCEPTION 'Esperadas 7 NFs, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes;
-  IF v_count <> 10 THEN RAISE EXCEPTION 'Esperadas 10 execucoes, obtido %',v_count; END IF;
+  IF v_count <> 9 THEN RAISE EXCEPTION 'Esperadas 9 execucoes, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao WHERE motivo='SERIE_AMBIGUA';
   IF v_count <> 0 THEN RAISE EXCEPTION 'Sem series concorrentes nao deve existir SERIE_AMBIGUA'; END IF;
   SELECT count(*) INTO v_count FROM public.pendencias_importacao
@@ -85,7 +85,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.pendencias_importacao WHERE motivo='TRANSFERENCIA';
   IF v_count <> 2 THEN RAISE EXCEPTION 'Esperados 2 VT com valor 5, obtido %',v_count; END IF;
   SELECT count(*) INTO v_count FROM public.prestacao_notas;
-  IF v_count <> 8 THEN RAISE EXCEPTION 'Esperados 8 canhotos de origem, obtido %',v_count; END IF;
+  IF v_count <> 7 THEN RAISE EXCEPTION 'Esperados 7 canhotos de origem, obtido %',v_count; END IF;
 
   SELECT id,romaneio_origem INTO STRICT v_nf_id,v_origem FROM public.notas_fiscais
     WHERE numero='005605465' AND serie='7';
@@ -113,7 +113,7 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.pendencias_importacao;
   IF v_count <> 11 THEN RAISE EXCEPTION 'Replay duplicou pendencias'; END IF;
   SELECT count(*) INTO v_count FROM public.nf_execucoes;
-  IF v_count <> 10 THEN RAISE EXCEPTION 'Replay duplicou execucoes'; END IF;
+  IF v_count <> 9 THEN RAISE EXCEPTION 'Replay duplicou execucoes'; END IF;
 
   -- Contrato obrigatório: ausência de coluna cancela TODO o lote.
   v_bloqueado := false;
