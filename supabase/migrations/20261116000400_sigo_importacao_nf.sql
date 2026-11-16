@@ -1,7 +1,25 @@
 -- SIGO Etapa 3: importacao StopView atomica, sem alterar a origem fiscal existente.
 -- Executar somente em banco descartavel no CI ate reconciliar migrations do Supabase hospedado.
 
-()=>ddl+"CREATE TABLE IF NOT EXISTS public.pendencias_importacao ("
+-- Série padrão para NF inédita sem série explícita.
+ALTER TABLE public.sla_config
+  ADD COLUMN IF NOT EXISTS serie_padrao text NOT NULL DEFAULT '7';
+DO $sigo_serie_padrao$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.sla_config'::regclass
+      AND conname = 'sla_config_serie_padrao_check'
+  ) THEN
+    ALTER TABLE public.sla_config ADD CONSTRAINT sla_config_serie_padrao_check
+      CHECK (serie_padrao ~ '^[0-9]{1,3}$');
+  END IF;
+END;
+$sigo_serie_padrao$;
+INSERT INTO public.sla_config(id) VALUES (true)
+  ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.pendencias_importacao (
   importacao_id uuid NOT NULL REFERENCES public.gm_importacoes(id),
   linha integer NOT NULL CHECK (linha > 0),
   codigo_rota text NOT NULL,
