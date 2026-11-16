@@ -236,11 +236,11 @@ BEGIN
     -- Evita concorrencia que criaria duas origens para o mesmo numero.
     PERFORM pg_advisory_xact_lock(hashtextextended(v_numero,0));
     IF v_serie IS NULL THEN
-      SELECT count(*),min(id) INTO v_cont,v_nf_id
+      SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
         FROM public.notas_fiscais WHERE numero=v_numero;
       IF v_cont <> 1 THEN v_motivo := 'SERIE_AMBIGUA'; END IF;
     ELSE
-      SELECT count(*),min(id) INTO v_cont,v_nf_id
+      SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
         FROM public.notas_fiscais
         WHERE numero=v_numero AND serie=v_serie;
       IF v_cont > 1 THEN v_motivo := 'SERIE_AMBIGUA'; END IF;
@@ -262,7 +262,7 @@ BEGIN
       RETURNING id INTO v_nf_id;
       IF v_nf_id IS NOT NULL THEN v_nfs := v_nfs + 1; END IF;
       IF v_nf_id IS NULL THEN
-        SELECT count(*),min(id) INTO v_cont,v_nf_id
+        SELECT count(*),(array_agg(id ORDER BY id))[1] INTO v_cont,v_nf_id
           FROM public.notas_fiscais WHERE numero=v_numero AND serie=v_serie;
         IF v_cont <> 1 THEN
           RAISE EXCEPTION 'NF % série % teve colisão não resolvida; importação cancelada',v_numero,v_serie;
