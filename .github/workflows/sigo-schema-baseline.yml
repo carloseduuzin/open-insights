@@ -1,6 +1,11 @@
-name: SIGO schema baseline / PostgreSQL 15
+name: SIGO schema baseline / PostgreSQL 16-17
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - feat/sigo-supabase-v1
+    paths:
+      - 'supabase/**'
 
 permissions:
   contents: read
@@ -8,9 +13,13 @@ permissions:
 jobs:
   schema-baseline:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['16', '17']
     services:
       postgres:
-        image: postgres:15
+        image: postgres:${{ matrix.postgres }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -63,6 +72,28 @@ jobs:
             SELECT count(*) INTO v_triggers FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal;
             IF v_tables <> 14 OR v_views <> 2 OR v_functions <> 14 OR v_policies <> 33 OR v_triggers <> 6 THEN
               RAISE EXCEPTION 'Unexpected schema inventory: tables %, views %, functions %, policies %, triggers %', v_tables,v_views,v_functions,v_policies,v_triggers;
+            END IF;
+          END;
+          $test$;
+          SQL
+      - name: Assert RLS, SECURITY DEFINER and invoker views
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          DO $test$
+          DECLARE v_tables_without_rls integer; v_definer_without_path integer; v_views_without_invoker integer;
+          BEGIN
+            SELECT count(*) INTO v_tables_without_rls
+            FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind='r' AND NOT relrowsecurity;
+            SELECT count(*) INTO v_definer_without_path
+            FROM pg_proc WHERE pronamespace='public'::regnamespace AND prosecdef
+              AND NOT (COALESCE(proconfig, ARRAY[]::text[]) @> ARRAY['search_path=""']);
+            SELECT count(*) INTO v_views_without_invoker
+            FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind='v'
+              AND NOT (COALESCE(reloptions, ARRAY[]::text[]) @> ARRAY['security_invoker=true']);
+            IF v_tables_without_rls <> 0 OR v_definer_without_path <> 0 OR v_views_without_invoker <> 0 THEN
+              RAISE EXCEPTION 'Schema security regressions: no RLS %, unsafe definer %, no invoker %',
+                v_tables_without_rls, v_definer_without_path, v_views_without_invoker;
             END IF;
           END;
           $test$;
