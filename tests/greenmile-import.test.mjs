@@ -23,7 +23,7 @@ test("Romaneio auxiliar não vira prestação oficial", () => {
   assert.equal(classificarRomaneio("444444444444"), "AUXILIAR");
   assert.equal(classificarRomaneio("600000000002"), "AUXILIAR");
   assert.equal(classificarRomaneio("123456789012"), "OFICIAL_CANDIDATO");
-  assert.equal(classificarRomaneio("123"), "INVALIDO");
+  assert.equal(classificarRomaneio("123"), "AUXILIAR");
 });
 test("Conciliação pelo ID da parada, não por localidade", () => {
   const paradas = [

@@ -73,6 +73,8 @@ jobs:
             echo "Applying $migration"
             psql -X -v ON_ERROR_STOP=1 -f "$migration"
           done
+      - name: Validate real reentrega export without inventing fiscal origin
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-reentrega-real.sql
       - name: Run StopView persistence / negative / idempotency SQL tests
         run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-import.sql
       - name: Prepare isolated database for VUC (two users, no real Supabase)

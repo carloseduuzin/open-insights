@@ -279,7 +279,7 @@ function Importacao() {
         </section>
         <section className="rounded-xl border border-border bg-card p-5 space-y-3">
           <h2 className="font-semibold">Importar rotas, paradas, NFs e prestações</h2>
-          <p className="text-sm text-muted-foreground">Prévia: <strong>{preparacao?.candidatos.length??0} romaneios oficiais candidatos</strong>, {preparacao?.auxiliares??0} rotas auxiliares excluídas. A importação chama uma única RPC que grava rotas, paradas, NFs, execuções, prestações e pendências, sem alterar a origem fiscal já cadastrada. Números sem série ambíguos e paradas sem NF ficam na fila de pendências.</p>
+          <p className="text-sm text-muted-foreground">Prévia: <strong>{preparacao?.candidatos.length??0} romaneios oficiais candidatos</strong>, {preparacao?.auxiliares??0} rotas auxiliares/reentregas sem criação de prestação fiscal. A importação chama uma única RPC que grava rotas, paradas, NFs, execuções, prestações e pendências, sem alterar a origem fiscal já cadastrada. Números sem série ambíguos e paradas sem NF ficam na fila de pendências.</p>
           {futuras>0 && <p className="rounded-md border border-amber-500/40 p-3 text-sm text-amber-500">{futuras} rota(s) com D0 no futuro. Aguarde a data da rota para abrir a prestação; hoje nenhum dado será gravado.</p>}
           {!!preparacao?.avisos.length && <p className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Avisos da prévia: {preparacao.avisos.length} ocorrência(s) para revisão. A RPC verificará os vínculos estruturais antes de gravar e cancelará o lote se houver divergência.</p>}
           {!!preparacao?.pendenciasNF.length && <div className="space-y-3 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
