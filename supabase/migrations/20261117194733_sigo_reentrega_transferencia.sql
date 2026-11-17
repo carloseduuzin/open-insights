@@ -654,6 +654,7 @@ BEGIN
  IF destino.id=origem.id THEN RETURN res||jsonb_build_object('resultado','MESMA_ROTA'); END IF;
  IF destino.data_rota<>origem.data_rota THEN RETURN res||jsonb_build_object('resultado','DATA_DIFERENTE'); END IF;
  PERFORM sigo_interno.mover_execucao(nf.id,destino.id,'TRANSFERENCIA',u);
+ UPDATE public.nf_reentregas SET rota_reentrega_id=destino.id WHERE nf_id=nf.id AND status='EM_ROTA';
  INSERT INTO public.nf_transferencias(nf_id,prestacao_origem_id,rota_origem_id,rota_destino_id,romaneio_destino,motivo,observacao,transferida_por)
  VALUES(nf.id,p.id,origem.id,destino.id,destino.romaneio_gm,p_motivo,nullif(btrim(p_observacao),''),u) RETURNING id INTO transferencia;
  INSERT INTO public.nf_eventos(nf_id,tipo,motivo,rota_destino_id,usuario_id) VALUES(nf.id,'TRANSFERENCIA',CASE WHEN p_motivo='REBALANCEAMENTO' THEN 'REBALANCEAMENTO' ELSE 'OUTRO_PADRONIZADO' END,destino.id,u);
