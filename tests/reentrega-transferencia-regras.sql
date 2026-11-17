@@ -97,4 +97,24 @@ BEGIN
   IF NOT negado THEN RAISE EXCEPTION 'Usuario sem role aceito na operacao %',cont; END IF;
  END LOOP;
 END; $regras$;
+-- Exercita a leitura com a role real do cliente, sem privilegios de postgres.
+SELECT set_config('sigo.uid',(SELECT id::text FROM public.profiles WHERE nome='Operador A sintetico'),true);
+SET LOCAL ROLE authenticated;
+DO $cliente$
+BEGIN
+ IF (SELECT count(*) FROM public.v_nf_acompanhamento)=0 THEN RAISE EXCEPTION 'Operador ativo nao enxerga acompanhamento'; END IF;
+ PERFORM count(*) FROM public.v_fila_reentrega;
+ PERFORM count(*) FROM public.v_reentrega_indicadores;
+ PERFORM count(*) FROM public.v_transferencias_dia;
+ PERFORM count(*) FROM public.v_divergencias_gm;
+END; $cliente$;
+RESET ROLE;
+SELECT set_config('sigo.uid',(SELECT id::text FROM public.profiles WHERE nome='Sem role sintetico'),true);
+SET LOCAL ROLE authenticated;
+DO $sem_acesso$
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.v_nf_acompanhamento) THEN RAISE EXCEPTION 'Perfil sem role leu NFs'; END IF;
+ IF EXISTS(SELECT 1 FROM public.nf_reentregas) THEN RAISE EXCEPTION 'Perfil sem role leu reentregas'; END IF;
+END; $sem_acesso$;
+RESET ROLE;
 ROLLBACK;
