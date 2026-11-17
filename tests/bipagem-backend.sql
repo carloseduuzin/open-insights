@@ -147,8 +147,16 @@ BEGIN
     RAISE EXCEPTION 'Caso 8: conferência não liberada após justificativa';
   END IF;
   SELECT count(*) INTO v_n FROM public.sigo_canhotos_faltantes(v_p)
-    WHERE numero='001234571' AND justificativa='EXTRAVIO';
+    WHERE nf_id=v_nf5 AND numero='001234571' AND justificativa='EXTRAVIO';
   IF v_n<>1 THEN RAISE EXCEPTION 'Caso 8: faltantes não exibiram justificativa'; END IF;
+  -- Contrato da API para UI: nf_id UUID é o PRIMEIRO campo do retorno.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+    WHERE p.oid='public.sigo_canhotos_faltantes(uuid)'::regprocedure
+      AND pg_get_function_result(p.oid) LIKE 'TABLE(nf_id uuid, numero text,%'
+  ) THEN
+    RAISE EXCEPTION 'sigo_canhotos_faltantes deve retornar nf_id UUID como primeira coluna';
+  END IF;
 
   -- 9) NF com duas séries não deve chutar série.
   v_res:=public.sigo_bipar_canhoto('1234572');
