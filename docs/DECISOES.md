@@ -108,3 +108,19 @@
 **Cobertura de testes:** `tests/stopview-import.sql` inclui os cinco números da rota `SP-1MFV69`, relatório informativo já tratado, não duplicação após reimportação, VT `5`, duas séries existentes causando `SERIE_AMBIGUA` e o caso de correspondência única `005605465-7`/`5605465`.
 
 **Escopo:** mudanças restritas ao PR #5, na branch `feat/importacao-nf`. Não aplicar migrations no Supabase hospedado; o replay é validado exclusivamente no PostgreSQL descartável do CI. O histórico remoto de migrations ainda requer reconciliação antes de implantação.
+
+## 2026-11-16 — Corrigir VT: abastecimento VUC, não transferência de NF
+
+**Decisão:** rotas `SP-<n>VTVU...` são abastecimentos realizados por VUC, sem movimentação fiscal atribuída à Renovelog. O destino determina se a chegada pertence ao cross próprio. A Renovelog recebe abastecimento exclusivamente em `CROSS-ZL`; códigos VT enviados ao `CROSS-ZS` permanecem registrados, mas não entram no painel de chegadas ZL.
+
+**Alterações da migration `20261116000450_sigo_vt_abastecimento.sql`:**
+1. Acrescentar `rotas.tipo_rota` com `ENTREGA | ABASTECIMENTO` e default `ENTREGA`. VT é persistida como `ABASTECIMENTO`; códigos, romaneios e dados brutos originais são preservados.
+2. Remover a geração de `TRANSFERENCIA` no novo fluxo da RPC `sigo_importar_stopview`. Toda parada VT fica fora do processamento fiscal: nenhuma NF, execução, vínculo fiscal ou pendência de importação.
+3. Preservar o campo original `stop.orders.number` em `paradas.valor_bruto_pedido`, sem atribuir semântica. Ainda **não sabemos o que o valor `5` significa operacionalmente**. A localidade deve vir de `Código da Localidade`, não da sigla VTVU.
+4. Adicionar `sla_config.localidade_cross_proprio` (default `CROSS-ZL`). Criar view `v_chegadas_vuc` com `security_invoker=true`, mostrando somente paradas de abastecimento cuja localidade corresponde à configuração.
+5. Corrigir pendências históricas `TRANSFERENCIA` para `TRATADA` e observação `abastecimento VUC`, mantendo linha e valor bruto. Quando não há usuário de tratamento, a observação identifica encerramento por migration, sem inventar ator humano. Nenhum dado fiscal histórico é apagado.
+6. Em replay parcial, o valor bruto de VT anterior só pode ser recuperado quando existir uma antiga pendência contendo o mesmo valor. **Não reconstruir valores que não estejam mais disponíveis**: um registro legado sem fonte permanece com `valor_bruto_pedido = NULL`.
+
+**Testes:** PostgreSQL 17 isolado, dois usuários ativos `operacional`, `SP-1VTVU005 / CROSS-ZL` gerando exatamente uma linha em `v_chegadas_vuc`; `SP-1VTVU004 / CROSS-ZS` gravada como abastecimento e filtrada da view; zero NF, execução e pendência novas para ambos. A amostra 005 usa dados do export real de 16/11; o 004 usa código e destino da revisão, com ID e romaneio sintéticos claramente identificados em `tests/fixtures/vuc_2026-11-16_regressao.csv`.
+
+**Status de deploy:** alteração **somente no GitHub e CI de PostgreSQL descartável**, não aplicada ao Supabase hospedado. O histórico remoto de migrations continua pendente de reconciliação.

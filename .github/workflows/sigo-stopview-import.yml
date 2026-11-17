@@ -75,6 +75,25 @@ jobs:
           done
       - name: Run StopView persistence / negative / idempotency SQL tests
         run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-import.sql
+      - name: Prepare isolated database for VUC (two users, no real Supabase)
+        shell: bash
+        run: |
+          set -euo pipefail
+          createdb sigo_vuc_ci
+          PGDATABASE=sigo_vuc_ci psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA auth;
+          CREATE TABLE auth.users (id uuid PRIMARY KEY, raw_user_meta_data jsonb);
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
+            AS $$ SELECT NULLIF(current_setting('sigo.uid', true),'')::uuid $$;
+          SQL
+          for migration in supabase/migrations/*.sql; do
+            echo "Applying to isolated VUC database: $migration"
+            PGDATABASE=sigo_vuc_ci psql -X -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Validate VUC arrivals, two operators, backfill and security invoker
+        env:
+          PGDATABASE: sigo_vuc_ci
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/vt-abastecimento.sql
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
