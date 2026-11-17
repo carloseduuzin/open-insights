@@ -217,10 +217,12 @@ BEGIN
   IF v_usuario IS NULL OR NOT (SELECT public.sigo_is_active()) THEN
     RAISE EXCEPTION 'Usuário sem acesso ativo ao SIGO';
   END IF;
+  <<processar>>
+  BEGIN
   v_resultado:='CODIGO_INVALIDO';
   IF v_norm IS NULL THEN
     v_detalhe:='FORMATO_INVALIDO';
-    GOTO finalizar;
+    EXIT processar;
   END IF;
   IF length(v_norm)=44 THEN
     v_numero:=substr(v_norm,26,9);
@@ -256,7 +258,7 @@ BEGIN
     END IF;
   END IF;
   v_resultado:='NAO_ENCONTRADA';
-  IF v_nf.id IS NULL THEN GOTO finalizar; END IF;
+  IF v_nf.id IS NULL THEN EXIT processar; END IF;
   v_nf_id:=v_nf.id;
 
   -- NF de abastecimento VUC nunca pode entrar na bipagem.
@@ -264,26 +266,26 @@ BEGIN
     SELECT 1 FROM public.rotas WHERE id=v_nf.origem_rota_id
       AND tipo_rota='ABASTECIMENTO') THEN
     v_detalhe:='ABASTECIMENTO';v_nf_id:=NULL;
-    GOTO finalizar;
+    EXIT processar;
   END IF;
   IF EXISTS(
     SELECT 1 FROM public.nf_execucoes e
     JOIN public.rotas r ON r.id=e.rota_id
     WHERE e.nf_id=v_nf.id AND r.tipo_rota='ABASTECIMENTO') THEN
     v_detalhe:='ABASTECIMENTO';v_nf_id:=NULL;
-    GOTO finalizar;
+    EXIT processar;
   END IF;
   IF length(v_norm)=44 AND v_nf.chave_acesso IS NOT NULL
      AND v_nf.chave_acesso::text<>v_norm THEN
-    v_detalhe:='CHAVE_DIVERGENTE';GOTO finalizar;
+    v_detalhe:='CHAVE_DIVERGENTE';EXIT processar;
   END IF;
   SELECT * INTO v_p FROM public.prestacoes
     WHERE romaneio_oficial=v_nf.romaneio_origem FOR UPDATE;
   v_resultado:='SEM_PRESTACAO';
-  IF v_p.id IS NULL THEN GOTO finalizar; END IF;
+  IF v_p.id IS NULL THEN EXIT processar; END IF;
   v_prestacao_id:=v_p.id;
   v_resultado:='PRESTACAO_FECHADA';
-  IF v_p.status IN ('ENVIADA_JTI','CONFIRMADA_JTI') THEN GOTO finalizar; END IF;
+  IF v_p.status IN ('ENVIADA_JTI','CONFIRMADA_JTI') THEN EXIT processar; END IF;
 
   -- Campo fiscal opcional que o StopView não possuía na primeira importação.
   -- Gravar uma vez, nunca reescrever ou trocar número/série/romaneio de origem.
@@ -298,7 +300,7 @@ BEGIN
   SELECT * INTO v_vinculo FROM public.prestacao_notas
     WHERE nf_id=v_nf.id FOR UPDATE;
   IF v_vinculo.prestacao_id IS DISTINCT FROM v_p.id THEN
-    v_resultado:='SEM_PRESTACAO';v_detalhe:='VINCULO_DIVERGENTE';GOTO finalizar;
+    v_resultado:='SEM_PRESTACAO';v_detalhe:='VINCULO_DIVERGENTE';EXIT processar;
   END IF;
   IF v_vinculo.canhoto_recebido_em IS NOT NULL THEN
     v_resultado:='JA_BIPADA';
@@ -306,7 +308,7 @@ BEGIN
       WHERE id=v_vinculo.canhoto_recebido_por;
     v_anterior:=jsonb_build_object('nome',v_usuario_anterior,
       'usuario_id',v_vinculo.canhoto_recebido_por,'em',v_vinculo.canhoto_recebido_em);
-    GOTO finalizar;
+    EXIT processar;
   END IF;
 
   v_now:=clock_timestamp();
@@ -330,7 +332,7 @@ BEGIN
     SELECT * INTO v_p FROM public.prestacoes WHERE id=v_p.id;
   END IF;
 
-  <<finalizar>>
+  END processar;
   -- Registrar TODA leitura autorizada, inclusive códigos inválidos/sem NF.
   INSERT INTO public.bipagens(
     codigo_lido,codigo_normalizado,resultado,nf_id,prestacao_id,
