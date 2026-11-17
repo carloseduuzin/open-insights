@@ -15,7 +15,7 @@ Proposta de banco, sem aplicação no Supabase hospedado. A interface será uma 
 
 ## Validação e limites
 
-Os testes SQL de regras são sintéticos, identificados como tal, executados em PostgreSQL isolado e revertidos. Não constituem homologação de importação real. A amostra técnica de exports reais de 16 e 17/11 é preservada separadamente; não há NF coincidente entre essas amostras para comprovar o ciclo completo de reentrega entre dias. Essa evidência continua pendente antes de liberar o fluxo.
+Os testes SQL de regras são sintéticos, identificados como tal, executados em PostgreSQL isolado e revertidos. O teste de importação carrega o CSV versionado com duas linhas reais e confere persistência, origem fiscal e replay sem duplicação. Esses testes passaram na execução isolada anterior à última correção de compatibilidade; a revisão atual deve manter todos os checks aprovados. Porém, não há NF coincidente entre essas amostras para comprovar o ciclo completo de reentrega entre dias. Essa evidência continua pendente antes de liberar o fluxo.
 
 Migration nomeada pela CLI na execução isolada: `20261117194733_sigo_reentrega_transferencia.sql`. O deploy transacional em `supabase/deploy/` compara todas as linhas das tabelas existentes antes/depois, sem quantidade fixa. Não usar db push; não executar em produção nesta etapa.
 

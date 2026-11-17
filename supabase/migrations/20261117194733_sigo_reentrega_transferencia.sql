@@ -721,6 +721,13 @@ BEGIN
     CONTINUE;
   ELSIF re.status='EM_ROTA' THEN
     destino:=re.rota_reentrega_id;
+    SELECT data_rota INTO data_nova FROM public.rotas WHERE id=destino;
+    IF item.ultima_data>=data_nova AND (NOT destino=ANY(item.rotas) OR cardinality(item.rotas)>1) THEN
+      INSERT INTO public.pendencias_importacao(importacao_id,linha,codigo_rota,valor_bruto,motivo,nf_id,observacao)
+      SELECT p_importacao,jsonb_array_length(p_linhas)+pendencias+1,r.codigo,nf.numero::text||'-'||nf.serie,'MOVIMENTACAO_SEM_REGISTRO',nf.id,'Reentrega em rota diverge do StopView; linha original: '||item.linha
+      FROM public.notas_fiscais nf JOIN public.rotas r ON r.id=destino WHERE nf.id=item.nf_id ON CONFLICT DO NOTHING;
+      IF FOUND THEN pendencias:=pendencias+1; END IF;
+    END IF;
     PERFORM sigo_interno.mover_execucao(item.nf_id,destino,'REENTREGA',u);
     CONTINUE;
   ELSIF re.status='DEVOLUCAO_PENDENTE' THEN
@@ -732,7 +739,7 @@ BEGIN
       IF t.conferencia_gm<>'CONFIRMADA' THEN UPDATE public.nf_transferencias SET conferencia_gm='CONFIRMADA',conferida_gm_em=clock_timestamp(),importacao_conferencia_id=p_importacao WHERE id=t.id; END IF;
       PERFORM sigo_interno.mover_execucao(item.nf_id,t.rota_destino_id,'TRANSFERENCIA',u);
       CONTINUE;
-    ELSIF t.conferencia_gm='PENDENTE' THEN
+    ELSE
       UPDATE public.nf_transferencias SET conferencia_gm='DIVERGENTE',conferida_gm_em=clock_timestamp(),importacao_conferencia_id=p_importacao WHERE id=t.id;
       -- Divergencia nao reverte uma transferencia que o operador registrou.
       PERFORM sigo_interno.mover_execucao(item.nf_id,t.rota_destino_id,'TRANSFERENCIA',u);
