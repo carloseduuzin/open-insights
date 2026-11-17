@@ -35,6 +35,11 @@ jobs:
       PGDATABASE: sigo_schema_ci
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout VUC 0450 pending PR #7 (CI only)
+        uses: actions/checkout@v4
+        with:
+          ref: 69916f31feae7e80ab15b3b86f39ab129510345a
+          path: sigo-vt-pr7
       - name: Stub minimal Supabase auth schema and roles (CI only)
         run: |
           set -euo pipefail
@@ -61,6 +66,10 @@ jobs:
             case "$migration" in
               supabase/migrations/20261116000200_sigo_schema_baseline.sql) continue ;;
             esac
+            if [[ "$migration" == "supabase/migrations/20261117000100_sigo_bipagem_canhotos.sql" && ! -f supabase/migrations/20261116000450_sigo_vt_abastecimento.sql ]]; then
+              echo "Applying pending 0450 from PR #7 before bipagem"
+              psql -X -v ON_ERROR_STOP=1 -f sigo-vt-pr7/supabase/migrations/20261116000450_sigo_vt_abastecimento.sql
+            fi
             echo "Applying: $migration"
             psql -X -v ON_ERROR_STOP=1 -f "$migration"
           done
@@ -76,7 +85,7 @@ jobs:
             SELECT count(*) INTO v_functions FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname LIKE 'sigo_%';
             SELECT count(*) INTO v_policies FROM pg_policies WHERE schemaname='public';
             SELECT count(*) INTO v_triggers FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal;
-            IF v_tables <> 14 OR v_views <> 2 OR v_functions <> 15 OR v_policies <> 33 OR v_triggers <> 7 THEN
+            IF v_tables <> 17 OR v_views <> 4 OR v_functions <> 21 OR v_policies <> 36 OR v_triggers <> 8 THEN
               RAISE EXCEPTION 'Unexpected schema inventory: tables %, views %, functions %, policies %, triggers %', v_tables,v_views,v_functions,v_policies,v_triggers;
             END IF;
           END;
