@@ -35,7 +35,7 @@ function Prestacao() {
   async function carregar() {
     setCarregando(true);setErro("");
     try {
-      const { data, error } = await requireSupabase().from("prestacoes").select("id,romaneio_oficial,d0,status,responsavel_id,retornada_em,conferida_em,enviada_em,confirmada_em").order("d0",{ascending:true}).limit(1000);
+      const { data, error } = await requireSupabase().from("prestacoes").select("id,romaneio_oficial,d0,status,responsavel_id,retornada_em,conferida_em,enviada_em,confirmada_em").is("arquivada_em",null).order("d0",{ascending:true}).limit(1000);
       if(error) throw error;
       setRegistros((data??[]) as PrestacaoRegistro[]);
     } catch (e) { setErro(e instanceof Error?e.message:"Não foi possível consultar prestações."); }

@@ -64,6 +64,8 @@ jobs:
             echo "Applying: $migration"
             psql -X -v ON_ERROR_STOP=1 -f "$migration"
           done
+      - name: Apply monthly export proposal
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/changes/sigo_exportacao_mensal.sql
       - name: Assert final schema object counts
         run: |
           set -euo pipefail
@@ -76,7 +78,7 @@ jobs:
             SELECT count(*) INTO v_functions FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname LIKE 'sigo_%';
             SELECT count(*) INTO v_policies FROM pg_policies WHERE schemaname='public';
             SELECT count(*) INTO v_triggers FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal;
-            IF v_tables <> 20 OR v_views <> 10 OR v_functions <> 26 OR v_policies <> 41 OR v_triggers <> 8 THEN
+            IF v_tables <> 21 OR v_views <> 11 OR v_functions <> 28 OR v_policies <> 42 OR v_triggers <> 8 THEN
               RAISE EXCEPTION 'Unexpected schema inventory: tables %, views %, functions %, policies %, triggers %', v_tables,v_views,v_functions,v_policies,v_triggers;
             END IF;
           END;
