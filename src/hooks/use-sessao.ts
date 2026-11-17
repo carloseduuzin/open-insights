@@ -1,41 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authService } from "@/services/auth";
 import { supabase } from "@/lib/supabase";
 import type { SessaoUsuario } from "@/types";
+import { chaveSessao, opcoesSessao, sincronizarSessaoCache } from "@/lib/sessao-consulta";
 
 export function useSessao() {
-  const [sessao, setSessao] = useState<SessaoUsuario | null>(null);
-  const [carregando, setCarregando] = useState(true);
+  const queryClient = useQueryClient();
+  const consulta = useQuery({
+    ...opcoesSessao(() => authService.sessaoAtual()),
+    enabled: typeof window !== "undefined",
+    refetchOnWindowFocus: true,
+  });
 
   useEffect(() => {
     let ativo = true;
-    const atualizar = async () => {
-      try {
-        const atual = await authService.sessaoAtual();
-        if (ativo) setSessao(atual);
-      } catch {
-        if (ativo) setSessao(null);
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    };
-    void atualizar();
-    const { data: listener } = supabase?.auth.onAuthStateChange((evento) => {
-      if (evento === "SIGNED_OUT") {
-        if (ativo) {
-          setSessao(null);
-          setCarregando(false);
-        }
-      } else if (evento === "SIGNED_IN" || evento === "TOKEN_REFRESHED") {
-        // Avoid awaiting Supabase calls inside the auth event callback.
-        queueMicrotask(() => { if (ativo) void atualizar(); });
-      }
+    const { data: listener } = supabase?.auth.onAuthStateChange((evento, autenticada) => {
+      // Leave the auth callback before issuing any Supabase requests.
+      queueMicrotask(() => {
+        if (ativo) void sincronizarSessaoCache(queryClient, evento, autenticada?.user.email);
+      });
     }) ?? { data: { subscription: null } };
-    return () => {
-      ativo = false;
-      listener.subscription?.unsubscribe();
-    };
-  }, []);
+    return () => { ativo = false; listener.subscription?.unsubscribe(); };
+  }, [queryClient]);
 
-  return { sessao, carregando, setSessao };
+  function setSessao(valor: SessaoUsuario | null | ((anterior: SessaoUsuario | null) => SessaoUsuario | null)) {
+    queryClient.setQueryData<SessaoUsuario | null>(chaveSessao, anterior => typeof valor === "function" ? valor(anterior ?? null) : valor);
+  }
+
+  return { sessao: consulta.data ?? null, carregando: consulta.isPending, setSessao };
 }
