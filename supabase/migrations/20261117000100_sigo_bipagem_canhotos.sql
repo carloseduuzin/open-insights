@@ -152,7 +152,7 @@ END;
 $justify$;
 
 CREATE OR REPLACE FUNCTION public.sigo_canhotos_faltantes(p_prestacao_id uuid)
-RETURNS TABLE(numero text,serie text,cliente text,status_gm text,tipo_execucao text,justificativa text)
+RETURNS TABLE(nf_id uuid,numero text,serie text,cliente text,status_gm text,tipo_execucao text,justificativa text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''
 AS $missing$
 BEGIN
@@ -168,7 +168,7 @@ BEGIN
       JOIN public.prestacoes p ON p.romaneio_oficial=nf.romaneio_origem
       WHERE p.id=p_prestacao_id
   )
-  SELECT nf.numero::text,nf.serie,pa.cliente,pa.status_gm,ne.tipo,j.motivo
+  SELECT nf.id,nf.numero::text,nf.serie,pa.cliente,pa.status_gm,ne.tipo,j.motivo
   FROM ids JOIN public.notas_fiscais nf ON nf.id=ids.nf_id
   LEFT JOIN public.prestacao_notas pn ON pn.nf_id=nf.id AND pn.prestacao_id=p_prestacao_id
   LEFT JOIN LATERAL (
