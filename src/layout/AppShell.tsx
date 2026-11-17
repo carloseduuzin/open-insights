@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   ClipboardList,
@@ -44,24 +45,22 @@ export function AppShell({
 }) {
   const [recolhida, setRecolhida] = useState(false);
   const [mobileAberta, setMobileAberta] = useState(false);
-  const [admin, setAdmin] = useState(false);
-  const [verificandoPermissao, setVerificandoPermissao] = useState(true);
   const navigate = useNavigate();
   const { sessao, carregando } = useSessao();
   useEffect(() => {
     if (!carregando && !sessao) navigate({ to: "/", replace: true });
   }, [carregando, sessao, navigate]);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  useEffect(() => {
-    if (!sessao) { setAdmin(false); setVerificandoPermissao(false); return; }
-    setVerificandoPermissao(true);
-    let mounted = true;
-    prestadoresService.ehAdmin()
-      .then((value) => { if (mounted) setAdmin(value); })
-      .catch(() => { if (mounted) setAdmin(false); })
-      .finally(() => { if (mounted) setVerificandoPermissao(false); });
-    return () => { mounted = false; };
-  }, [sessao]);
+  const permissao = useQuery({
+    queryKey: ["sigo-admin", sessao?.email],
+    queryFn: () => prestadoresService.ehAdmin(),
+    enabled: Boolean(sessao),
+    staleTime: 30_000,
+    gcTime: 300_000,
+    retry: false,
+  });
+  const admin = permissao.data === true;
+
 
   async function sair() {
     try {
@@ -72,8 +71,9 @@ export function AppShell({
     }
   }
 
-  if (carregando || verificandoPermissao) return <div className="flex min-h-screen items-center justify-center">Validando acesso ao SIGO...</div>;
+  if (carregando) return <div className="flex min-h-screen items-center justify-center">Validando acesso ao SIGO...</div>;
   if (!sessao) return null;
+  const verificandoFinanceiro = pathname === "/financeiro" && permissao.isPending;
   const financeiroBloqueado = pathname === "/financeiro" && !admin;
 
   return (
@@ -165,7 +165,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-6">{financeiroBloqueado ? <div role="alert" className="rounded-xl border border-border bg-card p-6"><h2 className="font-semibold">Acesso restrito</h2><p className="mt-2 text-sm text-muted-foreground">O módulo Financeiro é exclusivo para administradores do SIGO.</p></div> : children}</main>
+        <main className="flex-1 p-4 md:p-6">{verificandoFinanceiro ? <p role="status">Verificando acesso ao Financeiro...</p> : financeiroBloqueado ? <div role="alert" className="rounded-xl border border-border bg-card p-6"><h2 className="font-semibold">Acesso restrito</h2><p className="mt-2 text-sm text-muted-foreground">O módulo Financeiro é exclusivo para administradores do SIGO.</p></div> : children}</main>
       </div>
     </div>
   );
