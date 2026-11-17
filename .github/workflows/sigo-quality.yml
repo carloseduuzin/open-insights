@@ -2,7 +2,7 @@ name: SIGO quality gates
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/sigo-supabase-v1]
   push:
     branches: [feat/sigo-supabase-v1]
   workflow_dispatch:

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/layout/AppShell";
+import { BipagemCanhotos } from "@/components/BipagemCanhotos";
 import { requireSupabase } from "@/lib/supabase";
 import { criticidadePrestacao, vencimentoD3, type PrestacaoRegistro } from "@/lib/prestacao-sla";
 
@@ -45,6 +46,19 @@ function Prestacao() {
     if (baixando) return;
     const etapa = item.status === "ABERTA" ? "RETORNADA" : item.status === "RETORNADA" ? "CONFERIDA" : item.status === "CONFERIDA" ? "ENVIADA_JTI" : null;
     if (!etapa) return;
+    if (etapa === "CONFERIDA") {
+      try {
+        const { data, error } = await requireSupabase().from("v_prestacao_progresso").select("total_nfs").eq("prestacao_id", item.id).single();
+        if (error) throw error;
+        if (!data || data.total_nfs === 0) {
+          setErro("Esta prestação não tem NFs vinculadas. Confira a importação antes de registrar a conferência.");
+          return;
+        }
+      } catch {
+        setErro("Não foi possível verificar as NFs da prestação. A conferência foi interrompida.");
+        return;
+      }
+    }
     const texto = etapa === "RETORNADA" ? "registrar RETORNO À BASE" : etapa === "CONFERIDA" ? "registrar a CONFERÊNCIA" : "DAR BAIXA como ENVIADA À JTI";
     if (!window.confirm(`Confirma ${texto} da prestação ${item.romaneio_oficial}? O usuário e horário serão registrados automaticamente.`)) return;
     setBaixando(item.id);
@@ -97,6 +111,7 @@ function Prestacao() {
   const tom:Record<string,string>={CRITICO:"text-red-500",URGENTE:"text-orange-500",ALERTA:"text-amber-500",CONCLUIDA:"text-emerald-500",NO_PRAZO:"text-foreground",FUTURA:"text-muted-foreground"};
   return <AppShell titulo="Prestação de Contas" descricao="Controle de romaneios e SLA D+3 dias corridos">
     <div className="space-y-5">
+      <BipagemCanhotos prestacoes={registros} aoAtualizar={carregar} />
       <section className="rounded-xl border border-border bg-card p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="font-semibold">Fila de prestação JTI</h2><p className="mt-1 text-sm text-muted-foreground">D0 = data da rota GreenMile. Vencimento D+3 em dias corridos, com meta interna de 48 horas.</p></div>
