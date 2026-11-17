@@ -65,7 +65,10 @@ AS $normalize$
 DECLARE v text; v_num text; v_serie text;
 BEGIN
   IF codigo IS NULL THEN RETURN NULL; END IF;
-  v := btrim(codigo,E' \t\n\r\f\v');
+  -- ECMAScript String.prototype.trim: WhiteSpace + LineTerminator, incluindo
+  -- NBSP, espaços Unicode, separadores de linha e BOM; sem remover nada no meio.
+  v := btrim(codigo, E' \t\n\r\f\v' ||
+    U&'\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF');
   IF v ~ '^[0-9]{44}$' THEN RETURN v; END IF;
   IF v ~ '^[0-9]{1,9}-[0-9]{1,3}$' THEN
     v_num := lpad(split_part(v,'-',1),9,'0');
