@@ -39,13 +39,6 @@ jobs:
       PGDATABASE: sigo_bipagem_ci
     steps:
       - uses: actions/checkout@v4
-      # PR #7 (VT abastecimento) ainda não está na base.
-      # Nunca fazer merge implícito nem modificar schema hospedado.
-      - name: Checkout reviewed VT 0450 while PR #7 remains open
-        uses: actions/checkout@v4
-        with:
-          ref: 69916f31feae7e80ab15b3b86f39ab129510345a
-          path: sigo-vt-pr7
       - name: Prepare ephemeral PostgreSQL / auth
         shell: bash
         run: |
@@ -64,9 +57,6 @@ jobs:
         run: |
           set -euo pipefail
           for migration in supabase/migrations/*.sql; do
-            if [[ "$migration" == "supabase/migrations/20261117000100_sigo_bipagem_canhotos.sql" && ! -f supabase/migrations/20261116000450_sigo_vt_abastecimento.sql ]]; then
-              psql -X -v ON_ERROR_STOP=1 -f sigo-vt-pr7/supabase/migrations/20261116000450_sigo_vt_abastecimento.sql
-            fi
             echo "Applying $migration"
             psql -X -v ON_ERROR_STOP=1 -f "$migration"
           done
