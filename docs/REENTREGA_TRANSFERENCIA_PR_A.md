@@ -17,6 +17,6 @@ Proposta de banco, sem aplicação no Supabase hospedado. A interface será uma 
 
 Os testes SQL de regras são sintéticos, identificados como tal, executados em PostgreSQL isolado e revertidos. Não constituem homologação de importação real. A amostra técnica de exports reais de 16 e 17/11 é preservada separadamente; não há NF coincidente entre essas amostras para comprovar o ciclo completo de reentrega entre dias. Essa evidência continua pendente antes de liberar o fluxo.
 
-A proposta está em `supabase/changes/` até a CLI gerar o nome da migration na integração contínua. Não usar db push nem executar este arquivo diretamente em produção. O inventário antigo de testes ainda não contempla os objetos novos até sua revisão.
+Migration nomeada pela CLI na execução isolada: `20261117194733_sigo_reentrega_transferencia.sql`. O deploy transacional em `supabase/deploy/` compara todas as linhas das tabelas existentes antes/depois, sem quantidade fixa. Não usar db push; não executar em produção nesta etapa.
 
 Antes de qualquer implantação: concluir testes, revisar permissões e conciliação, gerar backup atualizado e comprovar recuperação. O backup original de 25 prestações não substitui a proteção dos dados importados posteriormente. As verificações de preservação devem comparar o estado atual completo, sem assumir quantidade fixa de 25.

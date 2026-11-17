@@ -25,19 +25,6 @@ jobs:
       PGDATABASE: sigo_movimentos
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: 3.2.0
-      - name: Gerar nome da migration pela CLI sem acesso remoto
-        run: |
-          set -euo pipefail
-          supabase --help
-          supabase migration --help
-          supabase migration new --help
-          supabase migration new sigo_reentrega_transferencia
-          generated=$(find supabase/migrations -name '*_sigo_reentrega_transferencia.sql')
-          echo "::notice title=Migration gerada::$generated"
-          cp supabase/changes/sigo_reentrega_transferencia.sql "$generated"
       - name: Preparar auth isolada e aplicar migrations
         run: |
           set -euo pipefail
@@ -51,7 +38,12 @@ jobs:
           SQL
           for migration in supabase/migrations/*.sql; do
             echo "Aplicando $migration"
-            psql -X -v ON_ERROR_STOP=1 -f "$migration"
+            if [[ "$migration" == *"_sigo_reentrega_transferencia.sql" ]]; then
+              psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO public.prestacoes(romaneio_oficial,d0) VALUES('987654329999',CURRENT_DATE);"
+              psql -X -v ON_ERROR_STOP=1 -f supabase/deploy/sigo_reentrega_transferencia.sql
+            else
+              psql -X -v ON_ERROR_STOP=1 -f "$migration"
+            fi
           done
       - name: Conferir regras e permissoes sem alterar producao
         run: psql -X -v ON_ERROR_STOP=1 -f tests/reentrega-transferencia-regras.sql
