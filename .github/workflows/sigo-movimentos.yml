@@ -1,0 +1,51 @@
+name: SIGO movimentos - homologacao isolada
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [feat/sigo-supabase-v1]
+    paths: ['supabase/**', 'tests/**', '.github/workflows/sigo-movimentos.yml']
+permissions:
+  contents: read
+jobs:
+  movimentos:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sigo_movimentos
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 15
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: sigo_movimentos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar auth isolada e aplicar migrations
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE anon NOLOGIN;
+          CREATE ROLE authenticated NOLOGIN;
+          CREATE ROLE service_role NOLOGIN;
+          CREATE SCHEMA auth;
+          CREATE TABLE auth.users(id uuid PRIMARY KEY,raw_user_meta_data jsonb);
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('sigo.uid',true),'')::uuid $$;
+          SQL
+          for migration in supabase/migrations/*.sql; do
+            echo "Aplicando $migration"
+            if [[ "$migration" == *"_sigo_reentrega_transferencia.sql" ]]; then
+              psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO auth.users(id,raw_user_meta_data) VALUES('77777777-7777-4777-8777-777777777777','{}'); SELECT set_config('sigo.uid','77777777-7777-4777-8777-777777777777',false); INSERT INTO public.prestacoes(romaneio_oficial,d0) VALUES('987654329999',CURRENT_DATE);"
+              psql -X -v ON_ERROR_STOP=1 -f supabase/deploy/sigo_reentrega_transferencia.sql
+            else
+              psql -X -v ON_ERROR_STOP=1 -f "$migration"
+            fi
+          done
+      - name: Conferir regras e permissoes sem alterar producao
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/reentrega-transferencia-regras.sql
+      - name: Conferir importacao com amostra tecnica real versionada
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/reentrega-transferencia-importacao-real.sql
