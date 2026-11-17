@@ -57,8 +57,8 @@ BEGIN
  'responsaveis',coalesce((SELECT jsonb_agg(jsonb_build_object('id',p.id,'nome',p.nome) ORDER BY p.id) FROM public.profiles p),'[]'::jsonb)) INTO conteudo;
  INSERT INTO public.exportacoes_prestacoes(chave,criada_por,dados,sha256_dados,candidatos)
  VALUES(p_chave,u,conteudo,encode(sha256(convert_to(conteudo::text,'UTF8')),'hex'),ids) RETURNING * INTO l;
- RETURN jsonb_build_object('id',l.id,'status',l.status,'sha256_dados',l.sha256_dados,'dados',l.dados,'candidatos',l.candidatos);
-END; $$;
+ RETURN jsonb_build_object('id',l.id,'status',l.status,'sha256_dados',l.sha256_dados,'dados',l.dados,'candidatos',l.candidatos,'email_mensagem_id',l.email_mensagem_id);
+END; $;
 
 CREATE FUNCTION public.sigo_concluir_exportacao(p_lote uuid,p_sha256_dados text,p_arquivo_caminho text,p_arquivo_sha256 text,p_email_mensagem_id text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE u uuid:=sigo_interno.exigir_operador();l public.exportacoes_prestacoes%ROWTYPE;quantidade integer;

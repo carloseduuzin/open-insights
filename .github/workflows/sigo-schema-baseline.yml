@@ -64,8 +64,6 @@ jobs:
             echo "Applying: $migration"
             psql -X -v ON_ERROR_STOP=1 -f "$migration"
           done
-      - name: Apply monthly export proposal
-        run: psql -X -v ON_ERROR_STOP=1 -f supabase/changes/sigo_exportacao_mensal.sql
       - name: Assert final schema object counts
         run: |
           set -euo pipefail

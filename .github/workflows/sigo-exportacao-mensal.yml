@@ -24,19 +24,6 @@ jobs:
       PGDATABASE: sigo_exportacao
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: 3.2.0
-      - name: Gerar migration usando CLI sem acesso remoto
-        run: |
-          set -euo pipefail
-          supabase --help
-          supabase migration --help
-          supabase migration new --help
-          supabase migration new sigo_exportacao_mensal
-          generated=$(find supabase/migrations -name '*_sigo_exportacao_mensal.sql')
-          echo "::notice title=Migration gerada::$generated"
-          cp supabase/changes/sigo_exportacao_mensal.sql "$generated"
       - name: Aplicar banco isolado
         run: |
           set -euo pipefail
