@@ -24,6 +24,23 @@ BEGIN
     (v_a,'operacional'),(v_b,'operacional');
 
   PERFORM set_config('sigo.uid',v_a::text,true);
+  -- Regressao: as PRIMEIRAS chamadas, antes de qualquer bipe bem-sucedido,
+  -- devem responder sem depender do descritor de um record ainda nao atribuido.
+  SELECT count(*) INTO v_log FROM public.bipagens;
+  v_res:=public.sigo_bipar_canhoto('9999','regressao-primeira-leitura');
+  IF v_res->>'resultado' IS DISTINCT FROM 'NAO_ENCONTRADA' THEN
+    RAISE EXCEPTION 'Primeira leitura sem NF retornou resultado incorreto';
+  END IF;
+  v_res:=public.sigo_bipar_canhoto('invalido','regressao-primeira-leitura');
+  IF v_res->>'resultado' IS DISTINCT FROM 'CODIGO_INVALIDO' THEN
+    RAISE EXCEPTION 'Codigo invalido antes de qualquer sucesso falhou';
+  END IF;
+  v_res:=public.sigo_bipar_canhoto(repeat('0',44),'regressao-primeira-leitura');
+  IF v_res->>'resultado' IS DISTINCT FROM 'NAO_ENCONTRADA'
+    OR (SELECT count(*) FROM public.bipagens) <> v_log+3 THEN
+    RAISE EXCEPTION 'Chave sem NF ou auditoria das primeiras leituras incorreta';
+  END IF;
+
   INSERT INTO public.rotas(data_rota,codigo,romaneio_gm,tipo_romaneio,tipo_rota)
     VALUES ('2026-11-16','SP-ORIGEM','601615021154','OFICIAL','ENTREGA')
     RETURNING id INTO v_origem;
