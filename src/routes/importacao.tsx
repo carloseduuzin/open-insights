@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/layout/AppShell";
+import { HistoricoImportacoes } from "@/components/HistoricoImportacoes";
+import { obterRascunhoImportacao, guardarRascunhoImportacao } from "@/lib/importacao-rascunho";
 import { lerCSV, conciliarStopViews, prepararPrestacoesGM, prepararLinhasStopView, type Linha } from "@/lib/greenmile-import";
 import { requireSupabase } from "@/lib/supabase";
 
@@ -23,6 +25,34 @@ function Importacao() {
   const [feedback,setFeedback] = useState("");
   const [importacaoConfirmada,setImportacaoConfirmada] = useState(false);
   const [cientePendencias,setCientePendencias] = useState(false);
+  const [usuarioId, setUsuarioId] = useState("");
+  const [rascunhoCarregado, setRascunhoCarregado] = useState(false);
+  const [revisaoHistorico, setRevisaoHistorico] = useState(0);
+  const travaImportacao = useRef(false);
+  useEffect(() => {
+    let cancelado = false;
+    async function restaurar() {
+      try {
+        const { data, error } = await requireSupabase().auth.getUser();
+        if (error) throw error;
+        if (!data.user) throw new Error("Sessão não encontrada. Entre novamente no SIGO.");
+        if (cancelado) return;
+        const salvo = obterRascunhoImportacao(data.user.id);
+        setUsuarioId(data.user.id);
+        if (salvo) {
+          setParadas(salvo.paradas); setPedidos(salvo.pedidos);
+          setImportacaoConfirmada(salvo.confirmada); setFeedback(salvo.feedback);
+        }
+      } catch (error) { if (!cancelado) setErro(error instanceof Error ? error.message : "Não foi possível recuperar a prévia desta sessão."); }
+      finally { if (!cancelado) setRascunhoCarregado(true); }
+    }
+    void restaurar();
+    return () => { cancelado = true; };
+  }, []);
+  useEffect(() => {
+    if (usuarioId && rascunhoCarregado) guardarRascunhoImportacao(usuarioId, { paradas, pedidos, confirmada: importacaoConfirmada, feedback });
+  }, [usuarioId, rascunhoCarregado, paradas, pedidos, importacaoConfirmada, feedback]);
+
 
   const auditoria = useMemo(() => {
     if (!paradas || !pedidos) return null;
@@ -100,7 +130,7 @@ function Importacao() {
   }, [paradas, pedidos]);
 
   async function lerArquivo(file: File | undefined, tipo: "paradas" | "pedidos") {
-    if (!file) return;
+    if (!file || gravando || !rascunhoCarregado) return;
     setProcessando(true); setErro(""); setCientePendencias(false); setFeedback(""); setImportacaoConfirmada(false);
     try {
       if (file.size > 35 * 1024 * 1024) throw new Error("Arquivo acima de 35 MB. Divida a exportação por período.");
@@ -133,14 +163,15 @@ function Importacao() {
   }, [paradas, pedidos]);
   const hoje = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const futuras = preparacao?.candidatos.filter(c=>c.d0>hoje).length ?? 0;
-  const permitido = !!paradas && !!pedidos && !lotePersistente.erro && lotePersistente.linhas.length>0 && futuras===0 && (!preparacao?.pendenciasNF.length || cientePendencias);
+  const permitido = rascunhoCarregado && !!usuarioId && !importacaoConfirmada && !!paradas && !!pedidos && !lotePersistente.erro && lotePersistente.linhas.length>0 && futuras===0 && (!preparacao?.pendenciasNF.length || cientePendencias);
   async function gravarPrestacoes() {
-    if (!permitido || !paradas || !pedidos || gravando) return;
+    if (!permitido || !paradas || !pedidos || gravando || travaImportacao.current) return;
     const confirmado = window.confirm(
       "CONFIRMAR importação persistente de " + lotePersistente.linhas.length +
       " linha(s) do StopView? Rotas, paradas, NFs, execuções, pendências e prestações serão gravadas em uma transação. A origem fiscal existente não será alterada."
     );
     if (!confirmado) return;
+    travaImportacao.current = true;
     setGravando(true); setFeedback(""); setErro("");
     try {
       if (!crypto?.subtle || !crypto.randomUUID) {
@@ -170,26 +201,40 @@ function Importacao() {
           (resumo.notas_novas ?? 0) + " NFs, " + (resumo.execucoes_novas ?? 0) +
           " execuções e " + (resumo.pendencias_novas ?? 0) + " pendências registradas.");
       setImportacaoConfirmada(true);
+      setRevisaoHistorico(v => v + 1);
     } catch (e) {
-      setErro(e instanceof Error ? e.message : "Falha na importação do StopView.");
-    } finally { setGravando(false); }
+      setErro(e && typeof e === "object" && "message" in e && typeof e.message === "string" ? e.message : "Falha na importação do StopView.");
+    } finally { travaImportacao.current = false; setGravando(false); }
   }
   const rotasFiltradas = auditoria?.rotas.filter(r => `${r.codigo} ${r.romaneio} ${r.motorista}`.toLowerCase().includes(filtroRota.toLowerCase())) ?? [];
   return <AppShell titulo="Importação GreenMile" descricao="Conferência e importação persistente dos CSV">
     <div className="space-y-5">
+      <HistoricoImportacoes revisao={revisaoHistorico} />
       <div className="rounded-xl border border-border bg-card p-5">
         <h2 className="font-semibold">Conferência dos StopViews</h2>
         <p className="mt-2 text-sm text-muted-foreground">Selecione os relatórios do mesmo período. A prévia é feita no navegador. Após confirmação, a RPC grava os dados no Supabase com histórico, proteção contra duplicidade e pendências de NF. A origem fiscal já cadastrada nunca é alterada.</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block space-y-2 text-sm font-medium">StopView — Paradas
-            <input type="file" accept=".csv,text/csv" disabled={processando} onChange={e=>void lerArquivo(e.target.files?.[0],"paradas")} className="block w-full rounded-md border p-2 text-sm" />
+            <input type="file" accept=".csv,text/csv" disabled={processando || gravando || !rascunhoCarregado || !usuarioId} onChange={e=>void lerArquivo(e.target.files?.[0],"paradas")} className="block w-full rounded-md border p-2 text-sm" />
             {paradas && <span className="block text-xs text-muted-foreground">{paradas.nome} — {paradas.linhas.length.toLocaleString("pt-BR")} linhas</span>}
           </label>
           <label className="block space-y-2 text-sm font-medium">StopView — Pedidos e Itens
-            <input type="file" accept=".csv,text/csv" disabled={processando} onChange={e=>void lerArquivo(e.target.files?.[0],"pedidos")} className="block w-full rounded-md border p-2 text-sm" />
+            <input type="file" accept=".csv,text/csv" disabled={processando || gravando || !rascunhoCarregado || !usuarioId} onChange={e=>void lerArquivo(e.target.files?.[0],"pedidos")} className="block w-full rounded-md border p-2 text-sm" />
             {pedidos && <span className="block text-xs text-muted-foreground">{pedidos.nome} — {pedidos.linhas.length.toLocaleString("pt-BR")} linhas</span>}
           </label>
         </div>
+        {!rascunhoCarregado && <p role="status" className="mt-3 text-sm">Recuperando prévia desta aba...</p>}
+        {(paradas || pedidos) && <div className="mt-4 rounded-lg border border-border p-4 space-y-3">
+          <p className="font-semibold">{importacaoConfirmada ? "Importação confirmada no banco" : "Prévia preparada — ainda não salva no banco"}</p>
+          <p className="text-sm text-muted-foreground">A prévia permanece ao trocar de tela nesta aba. Para manter o histórico ao fechar ou recarregar o SIGO, confirme a gravação no banco.</p>
+          {paradas && <p className="text-sm">Paradas: <strong>{paradas.nome}</strong></p>}
+          {pedidos && <p className="text-sm">Pedidos e Itens: <strong>{pedidos.nome}</strong></p>}
+          {!importacaoConfirmada && <button type="button" disabled={!permitido || gravando} onClick={() => void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40">{gravando ? "Salvando no banco..." : "Confirmar e salvar importação"}</button>}
+          {!importacaoConfirmada && !!preparacao?.pendenciasNF.length && !cientePendencias && <p className="text-sm text-amber-500">Há pendências fiscais: revise os detalhes abaixo e marque a ciência para habilitar a confirmação.</p>}
+          {!importacaoConfirmada && futuras > 0 && <p className="text-sm text-amber-500">Há rotas futuras. Aguarde a data da rota antes de confirmar.</p>}
+          {feedback && <p role="status" className="text-sm text-emerald-500">{feedback}</p>}
+          {importacaoConfirmada && <Link to="/prestacao" className="inline-flex rounded-md border border-border px-4 py-2 text-sm">Ir para prestação e bipagem</Link>}
+        </div>}
         {erro && <p role="alert" className="mt-3 text-sm text-destructive">{erro}</p>}
       </div>
       {lotePersistente.erro && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{lotePersistente.erro}</p>}
@@ -247,7 +292,7 @@ function Importacao() {
             <table className="w-full text-left text-xs"><thead><tr><th className="p-2">Romaneio oficial</th><th className="p-2">D0</th><th className="p-2">Rota</th></tr></thead><tbody>{preparacao?.candidatos.map(c=><tr key={c.romaneio+"|"+c.rota} className="border-t border-border"><td className="p-2 font-mono">{c.romaneio}</td><td className="p-2">{c.d0}</td><td className="p-2">{c.rota}</td></tr>)}</tbody></table>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar importação StopView"}</button>
+            <button type="button" disabled={!permitido||gravando} onClick={()=>void gravarPrestacoes()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{gravando?"Gravando...":"Confirmar e salvar importação"}</button>
             <Link to="/prestacao" className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Ver acompanhamento atual</Link>
           </div>
           {!!preparacao?.pendenciasNF.length && !cientePendencias && !preparacao.bloqueado && <p className="text-sm text-amber-500">Para habilitar a importação, leia e marque a confirmação de ciência das pendências fiscais.</p>}
