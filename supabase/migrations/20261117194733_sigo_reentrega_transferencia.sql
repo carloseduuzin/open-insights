@@ -757,7 +757,7 @@ END; $$;
 -- A funcao-base e gerada a partir da migration anterior, sem alterar o historico.
 -- Sua persistencia e protegida por SHA e pelo wrapper abaixo.
 CREATE OR REPLACE FUNCTION public.sigo_importar_stopview(p_importacao_id uuid,p_linhas jsonb) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE u uuid:=sigo_interno.exigir_operador();antes jsonb;resultado jsonb;conferencia jsonb;
+DECLARE antes jsonb;resultado jsonb;conferencia jsonb;
 BEGIN
  SELECT coalesce(jsonb_object_agg(nf_id::text,rota_id::text),'{}') INTO antes FROM public.nf_execucoes WHERE encerrada_em IS NULL;
  resultado:=sigo_interno.importar_stopview_base(p_importacao_id,p_linhas);
