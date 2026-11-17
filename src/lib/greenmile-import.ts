@@ -47,6 +47,8 @@ export function normalizarNF(valor: string): NFNormalizada | null {
 }
 
 export function classificarRomaneio(valor: string): "OFICIAL_CANDIDATO" | "AUXILIAR" | "INVALIDO" {
+  // Descricoes curtas e marcadores auxiliares arredondados no export nao sao origem fiscal.
+  if (/^\d{1,11}$/.test(valor) || /^([1-9])[.,]\1{1,10}e\+?11$/i.test(valor)) return "AUXILIAR";
   if (!/^\d{12}$/.test(valor)) return "INVALIDO";
   if (/^(\d)\1{11}$/.test(valor) || valor.startsWith("6000000000")) return "AUXILIAR";
   return "OFICIAL_CANDIDATO";
@@ -179,7 +181,7 @@ export function prepararLinhasStopView(paradas: ResultadoCSV, pedidos: Resultado
     const romaneio = p["Descrição da rota"]?.trim() ?? "";
     const data = (p["Data da Rota"] ?? "").slice(0, 10);
     if (!codigo) throw new Error("StopView: Código da rota vazio na parada " + id);
-    if (!/^[0-9]{12}$/.test(romaneio)) throw new Error("StopView: Descrição da rota deve ser romaneio com 12 dígitos, parada " + id);
+    if (classificarRomaneio(romaneio) === "INVALIDO") throw new Error("StopView: descrição de rota inválida; confira o romaneio completo ou a identificação de reentrega, parada " + id);
     if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data)) throw new Error("StopView: Data da Rota inválida na parada " + id);
     porId.set(id, p);
   }
