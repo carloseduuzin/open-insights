@@ -39,7 +39,7 @@ jobs:
           for migration in supabase/migrations/*.sql; do
             echo "Aplicando $migration"
             if [[ "$migration" == *"_sigo_reentrega_transferencia.sql" ]]; then
-              psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO public.prestacoes(romaneio_oficial,d0) VALUES('987654329999',CURRENT_DATE);"
+              psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO auth.users(id,raw_user_meta_data) VALUES('77777777-7777-4777-8777-777777777777','{}'); SELECT set_config('sigo.uid','77777777-7777-4777-8777-777777777777',false); INSERT INTO public.prestacoes(romaneio_oficial,d0) VALUES('987654329999',CURRENT_DATE);"
               psql -X -v ON_ERROR_STOP=1 -f supabase/deploy/sigo_reentrega_transferencia.sql
             else
               psql -X -v ON_ERROR_STOP=1 -f "$migration"
@@ -47,3 +47,5 @@ jobs:
           done
       - name: Conferir regras e permissoes sem alterar producao
         run: psql -X -v ON_ERROR_STOP=1 -f tests/reentrega-transferencia-regras.sql
+      - name: Conferir importacao com amostra tecnica real versionada
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/reentrega-transferencia-importacao-real.sql
