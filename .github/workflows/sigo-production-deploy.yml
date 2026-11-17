@@ -1,0 +1,131 @@
+name: SIGO production SQL bundle / PostgreSQL 17
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - feat/sigo-supabase-v1
+    paths:
+      - 'supabase/deploy/**'
+      - 'supabase/migrations/**'
+      - '.github/workflows/sigo-production-deploy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-transaction-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sigo_deploy_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sigo_deploy_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: sigo_deploy_ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bundle preserves exact migration bytes and transaction order
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          names = [
+            '20261116000300_sigo_sla_hardening_v2.sql',
+            '20261116000400_sigo_importacao_nf.sql',
+            '20261116000450_sigo_vt_abastecimento.sql',
+            '20261117000100_sigo_bipagem_canhotos.sql',
+          ]
+          script = Path('supabase/deploy/2026-11-17_producao.sql').read_text()
+          assert script.count('\nBEGIN;\n') == 1, 'Expected one transaction begin'
+          assert script.count('\nCOMMIT;\n') == 1, 'Expected one transaction commit'
+          assert '20261116000200_sigo_schema_baseline.sql' not in script, 'Baseline must not be bundled'
+          starts = []
+          for name in names:
+            original = Path('supabase/migrations', name).read_text()
+            marker = '-- ==== BEGIN MIGRATION ' + name + ' (VERBATIM) ====\n'
+            start = script.index(marker) + len(marker)
+            actual = script[start:start+len(original)]
+            assert actual == original, 'Migration differs from source: ' + name
+            starts.append(start)
+          assert starts == sorted(starts), 'Incorrect migration order'
+          assert script.index('BEGIN;') < starts[0] and script.rindex('COMMIT;') > starts[-1]
+          print('Bundle verified: 4 byte-identical migrations, single BEGIN/COMMIT, no baseline')
+          PY
+      - name: Build fresh baseline database with auth stubs
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE anon NOLOGIN;
+          CREATE ROLE authenticated NOLOGIN;
+          CREATE ROLE service_role NOLOGIN;
+          CREATE SCHEMA auth;
+          CREATE TABLE auth.users(id uuid PRIMARY KEY, raw_user_meta_data jsonb);
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
+            AS $$ SELECT NULLIF(current_setting('sigo.uid',true),'')::uuid $$;
+          SQL
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261116000200_sigo_schema_baseline.sql
+      - name: Seed and snapshot existing prestations (must be preserved)
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO auth.users(id,raw_user_meta_data)
+            VALUES ('99999999-1111-4111-8111-999999999999','{}'::jsonb);
+          INSERT INTO public.profiles(id,nome,ativo)
+            VALUES ('99999999-1111-4111-8111-999999999999','Deploy CI',true);
+          INSERT INTO public.user_roles(user_id,role)
+            VALUES ('99999999-1111-4111-8111-999999999999','operacional');
+          SELECT set_config('sigo.uid','99999999-1111-4111-8111-999999999999',false);
+          INSERT INTO public.prestacoes(romaneio_oficial,d0)
+            VALUES ('789456123001','2026-11-16'),('789456123002','2026-11-16');
+          UPDATE public.prestacoes SET status='RETORNADA' WHERE romaneio_oficial='789456123002';
+          UPDATE public.prestacoes SET status='CONFERIDA' WHERE romaneio_oficial='789456123002';
+          UPDATE public.prestacoes SET status='ENVIADA_JTI' WHERE romaneio_oficial='789456123002';
+          SQL
+          psql -X -At -v ON_ERROR_STOP=1 -c \
+            "SELECT count(*) || ':' || count(*) FILTER (WHERE status='ENVIADA_JTI') FROM public.prestacoes" \
+            > /tmp/sigo-before.txt
+          test "$(cat /tmp/sigo-before.txt)" = '2:1'
+      - name: Apply EXACT production SQL as one transaction to clean PostgreSQL 17
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/deploy/2026-11-17_producao.sql
+      - name: Verify published functions, schema and preserved prestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -X -At -v ON_ERROR_STOP=1 -c \
+            "SELECT count(*) || ':' || count(*) FILTER (WHERE status='ENVIADA_JTI') FROM public.prestacoes" \
+            > /tmp/sigo-after.txt
+          diff -u /tmp/sigo-before.txt /tmp/sigo-after.txt
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          DO $check$
+          BEGIN
+            IF (SELECT count(*) FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind='r') <> 17
+              OR to_regclass('public.v_chegadas_vuc') IS NULL
+              OR to_regclass('public.v_prestacao_progresso') IS NULL
+              OR (SELECT reloptions @> ARRAY['security_invoker=true'] FROM pg_class
+                  WHERE oid='public.v_prestacao_progresso'::regclass) IS DISTINCT FROM true
+            THEN RAISE EXCEPTION 'Post-deploy schema inventory/view mismatch'; END IF;
+            IF to_regprocedure('public.sigo_canhotos_faltantes(uuid)') IS NULL
+              OR pg_get_function_result('public.sigo_canhotos_faltantes(uuid)'::regprocedure)
+                  NOT LIKE 'TABLE(nf_id uuid, numero text,%'
+            THEN RAISE EXCEPTION 'Post-deploy nf_id return missing'; END IF;
+          END
+          $check$;
+          SQL
