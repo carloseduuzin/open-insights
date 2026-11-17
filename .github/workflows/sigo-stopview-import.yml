@@ -41,6 +41,11 @@ jobs:
       PGDATABASE: sigo_stopview_ci
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout reviewed VT abastecimento PR #7 (CI only)
+        uses: actions/checkout@v4
+        with:
+          ref: 69916f31feae7e80ab15b3b86f39ab129510345a
+          path: sigo-vt-pr7
       - name: Prepare isolated auth stubs (not the hosted Supabase)
         shell: bash
         run: |
@@ -70,11 +75,22 @@ jobs:
               echo "Applying reviewed 0300 from PR #4 before 0400"
               psql -X -v ON_ERROR_STOP=1 -f "sigo-sla-pr4/supabase/migrations/20261116000300_sigo_sla_hardening_v2.sql"
             fi
+            if [[ "$migration" == "supabase/migrations/20261117000100_sigo_bipagem_canhotos.sql" && ! -f supabase/migrations/20261116000450_sigo_vt_abastecimento.sql ]]; then
+              echo "Applying pending VT 0450 before bipagem"
+              psql -X -v ON_ERROR_STOP=1 -f sigo-vt-pr7/supabase/migrations/20261116000450_sigo_vt_abastecimento.sql
+            fi
             echo "Applying $migration"
             psql -X -v ON_ERROR_STOP=1 -f "$migration"
           done
       - name: Run StopView persistence / negative / idempotency SQL tests
-        run: psql -X -v ON_ERROR_STOP=1 -f tests/stopview-import.sql
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f supabase/migrations/20261116000450_sigo_vt_abastecimento.sql ]]; then
+            psql -X -v ON_ERROR_STOP=1 -f tests/stopview-import.sql
+          else
+            psql -X -v ON_ERROR_STOP=1 -f sigo-vt-pr7/tests/stopview-import.sql
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
