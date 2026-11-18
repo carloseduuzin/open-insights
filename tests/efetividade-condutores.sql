@@ -40,5 +40,12 @@ BEGIN
  negado:=false;BEGIN PERFORM public.sigo_registrar_frequencia('Outro condutor',current_date,'PRESENTE');EXCEPTION WHEN OTHERS THEN negado:=true;END;
  IF NOT negado THEN RAISE EXCEPTION 'Operador alterou presenca sem acesso'; END IF;
  IF has_table_privilege('authenticated','public.condutor_frequencias','INSERT') OR has_table_privilege('authenticated','public.condutor_frequencia_auditoria','UPDATE') OR has_function_privilege('anon','public.sigo_consultar_efetividade(date,date)','EXECUTE') THEN RAISE EXCEPTION 'Permissao excessiva no controle de condutores'; END IF;
+ EXECUTE 'SET LOCAL ROLE authenticated';
+ IF EXISTS(SELECT 1 FROM public.condutor_frequencias) OR EXISTS(SELECT 1 FROM public.condutor_frequencia_auditoria) THEN RAISE EXCEPTION 'RLS expos desempenho gerencial ao operador'; END IF;
+ EXECUTE 'RESET ROLE';
+ PERFORM set_config('sigo.uid',u::text,true);
+ EXECUTE 'SET LOCAL ROLE authenticated';
+ IF (SELECT count(*) FROM public.condutor_frequencias)<>1 OR (SELECT count(*) FROM public.condutor_frequencia_auditoria)<>2 THEN RAISE EXCEPTION 'Administrador sem acesso aos registros e auditoria'; END IF;
+ EXECUTE 'RESET ROLE';
 END; $teste$;
 ROLLBACK;

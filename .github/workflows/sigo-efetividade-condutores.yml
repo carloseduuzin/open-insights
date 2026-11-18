@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 jobs:
-  exportacao:
+  efetividade:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -24,19 +24,6 @@ jobs:
       PGDATABASE: sigo_exportacao
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: 3.2.0
-      - name: Gerar migration usando CLI sem acesso remoto
-        run: |
-          set -euo pipefail
-          supabase --help
-          supabase migration --help
-          supabase migration new --help
-          supabase migration new sigo_efetividade_condutores
-          generated=$(find supabase/migrations -name '*_sigo_efetividade_condutores.sql')
-          echo "::notice title=Migration gerada::$generated"
-          cp supabase/changes/sigo_efetividade_condutores.sql "$generated"
       - name: Aplicar banco isolado
         run: |
           set -euo pipefail

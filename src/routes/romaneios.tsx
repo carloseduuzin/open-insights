@@ -58,14 +58,14 @@ function Romaneios(){
    </>}
   </section>
   <section className="rounded-xl border border-border bg-card p-5 space-y-4"><h2 className="font-semibold">Lançamento manual de presença</h2><p className="text-sm text-muted-foreground">Use sempre o mesmo nome completo do GreenMile. Nomes iguais podem representar pessoas diferentes; confirme a identidade antes de lançar ou compartilhar o acompanhamento.</p>
-   <form onSubmit={e=>void salvar(e)} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-    <label className="space-y-1 text-sm">Condutor<input required list="nomes-condutores" value={nome} onChange={e=>setNome(e.target.value)} maxLength={160} className={input} placeholder="Selecione ou informe o nome completo"/><datalist id="nomes-condutores">{linhas.map(c=><option key={c.nome} value={c.nome}/>)}</datalist></label>
+   <form onSubmit={e=>void salvar(e)} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><fieldset disabled={gravando} className="contents">
+    <label className="space-y-1 text-sm">Condutor<input required list="nomes-condutores" value={nome} onChange={e=>{setNome(e.target.value);setSituacao("ESCALADO");setObservacao("");setAviso("");}} maxLength={160} className={input} placeholder="Selecione ou informe o nome completo"/><datalist id="nomes-condutores">{linhas.map(c=><option key={c.nome} value={c.nome}/>)}</datalist></label>
     <label className="space-y-1 text-sm">Data<input required type="date" value={dia} onChange={e=>selecionar(nome,e.target.value)} className={input}/></label>
     <label className="space-y-1 text-sm">Situação<select value={situacao} onChange={e=>setSituacao(e.target.value)} className={input}>{Object.entries(rotulos).map(([v,t])=><option key={v} value={v}>{t}</option>)}</select></label>
     {situacao==="ATRASO"&&<label className="space-y-1 text-sm">Minutos de atraso<input required type="number" min={1} max={1440} value={minutos} onChange={e=>setMinutos(e.target.value)} className={input}/></label>}
     <label className="space-y-1 text-sm sm:col-span-2">Observação / motivo da correção<textarea value={observacao} onChange={e=>setObservacao(e.target.value)} required={situacao==="FALTA_JUSTIFICADA"} className={input}/></label>
     <div><button type="submit" disabled={gravando||!nome.trim()||!dia} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40">{gravando?"Salvando...":"Salvar presença"}</button></div>
-   </form>
+   </fieldset></form>
    {erro&&<p role="alert" className="text-destructive">{erro}</p>}{aviso&&<p role="status" className="text-emerald-500">{aviso}</p>}
    {!!historico.length&&<details><summary className="cursor-pointer text-sm">Ver lançamentos de {nome}</summary><ul className="mt-2 space-y-2 text-sm">{historico.map(f=><li key={f.id||f.data}><button type="button" onClick={()=>selecionar(nome,f.data)} className="underline">{f.data}</button> — {rotulos[f.situacao]||f.situacao}{f.minutos_atraso?` · ${f.minutos_atraso} minutos`:""}{f.observacao?` · ${f.observacao}`:""}</li>)}</ul></details>}
   </section>

@@ -15,6 +15,7 @@ CREATE TABLE public.condutor_frequencia_auditoria(
 CREATE INDEX condutor_frequencia_auditoria_freq_idx ON public.condutor_frequencia_auditoria(frequencia_id,ocorrido_em);
 REVOKE ALL ON SEQUENCE public.condutor_frequencia_auditoria_id_seq FROM PUBLIC,anon,authenticated;
 CREATE INDEX rotas_motorista_periodo_idx ON public.rotas(data_rota,motorista_gm) WHERE tipo_rota='ENTREGA';
+CREATE INDEX paradas_efetividade_rota_data_idx ON public.paradas(rota_id,data_rota,id) INCLUDE(status_gm);
 ALTER TABLE public.condutor_frequencias ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.condutor_frequencia_auditoria ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.condutor_frequencias,public.condutor_frequencia_auditoria FROM PUBLIC,anon,authenticated;
