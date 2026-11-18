@@ -1,221 +1,40 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  Bike,
-  CircleGauge,
-  Truck,
-  TriangleAlert,
-  Wallet,
-  Route as RouteIcon,
-} from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { AppShell } from "@/layout/AppShell";
-import { CardIndicador } from "@/components/CardIndicador";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { entregasPorBase, indicadores, pendenciasPorDia, rotasCriticas } from "@/data/mock";
+import { requireSupabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/dashboard")({
-  head: () => ({
-    meta: [
-      { title: "Dashboard Operacional — SIGO | RenoveLog" },
-      {
-        name: "description",
-        content:
-          "Indicadores diários de rotas, frota, pendências, SLA e faturamento da operação RenoveLog.",
-      },
-      { property: "og:title", content: "Dashboard Operacional — SIGO | RenoveLog" },
-      {
-        property: "og:description",
-        content: "Rotas do dia, SLA, pendências e rotas críticas em tempo real.",
-      },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "Dashboard — SIGO | RenoveLog" }] }),
   component: Dashboard,
 });
-
-const tooltipStyle = {
-  backgroundColor: "var(--card)",
-  border: "1px solid var(--border)",
-  borderRadius: "10px",
-  color: "var(--foreground)",
-  fontSize: "12px",
-};
+type Totais = { pendentes: number; criticas: number; urgentes: number; alertas: number; baixadas: number; arquivadas: number };
 
 function Dashboard() {
-  return (
-    <AppShell titulo="Dashboard" descricao="Visão geral da operação do dia">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <CardIndicador
-          titulo="Rotas do dia"
-          valor={String(indicadores.rotasDoDia)}
-          detalhe="+8 em relação a ontem"
-          icon={RouteIcon}
-        />
-        <CardIndicador
-          titulo="Motos disponíveis"
-          valor={String(indicadores.motosDisponiveis)}
-          detalhe="Frota leve"
-          icon={Bike}
-          tom="success"
-        />
-        <CardIndicador
-          titulo="Fiorinos"
-          valor={String(indicadores.fiorinos)}
-          detalhe="Frota utilitária"
-          icon={Truck}
-          tom="primary"
-        />
-        <CardIndicador
-          titulo="Pendências"
-          valor={String(indicadores.pendencias)}
-          detalhe="Aguardando tratativa"
-          icon={TriangleAlert}
-          tom="warning"
-        />
-        <CardIndicador
-          titulo="SLA"
-          valor={`${indicadores.sla.toFixed(1)}%`}
-          detalhe="Meta 95%"
-          icon={CircleGauge}
-          tom="success"
-        />
-        <CardIndicador
-          titulo="Valor da quinzena"
-          valor={indicadores.valorQuinzena.toLocaleString("pt-BR", {
-            style: "currency",
-            currency: "BRL",
-          })}
-          detalhe="Prévia de pagamento"
-          icon={Wallet}
-          tom="primary"
-        />
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card className="border-border bg-card">
-          <CardHeader>
-            <CardTitle className="text-base">Entregas por Base</CardTitle>
-          </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={entregasPorBase}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis
-                  dataKey="base"
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--accent)" }} />
-                <Bar dataKey="entregas" fill="var(--chart-1)" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card">
-          <CardHeader>
-            <CardTitle className="text-base">Pendências por Dia</CardTitle>
-          </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={pendenciasPorDia}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis
-                  dataKey="dia"
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Line
-                  type="monotone"
-                  dataKey="pendencias"
-                  stroke="var(--chart-3)"
-                  strokeWidth={2.5}
-                  dot={{ r: 3, fill: "var(--chart-3)" }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="mt-6 border-border bg-card">
-        <CardHeader>
-          <CardTitle className="text-base">Rotas Críticas</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Rota</TableHead>
-                <TableHead>Base</TableHead>
-                <TableHead>Prestador</TableHead>
-                <TableHead className="text-right">Entregas</TableHead>
-                <TableHead className="text-right">SLA</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rotasCriticas.map((rota) => (
-                <TableRow key={rota.id}>
-                  <TableCell className="font-medium">{rota.codigo}</TableCell>
-                  <TableCell>{rota.base}</TableCell>
-                  <TableCell>{rota.prestador}</TableCell>
-                  <TableCell className="text-right">{rota.entregas}</TableCell>
-                  <TableCell className="text-right">{rota.sla.toFixed(1)}%</TableCell>
-                  <TableCell>
-                    <Badge
-                      className={
-                        rota.status === "Crítica"
-                          ? "bg-destructive/15 text-destructive"
-                          : rota.status === "Atrasada"
-                            ? "bg-warning/15 text-warning"
-                            : "bg-success/15 text-success"
-                      }
-                    >
-                      {rota.status}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </AppShell>
-  );
+  const consulta = useQuery({
+    queryKey: ["sigo-dashboard"],
+    queryFn: async () => {
+      const { data, error } = await requireSupabase().from("v_dashboard_prestacoes").select("pendentes,criticas,urgentes,alertas,baixadas,arquivadas").single();
+      if (error) throw error;
+      if (!data) throw new Error("Indicadores não confirmados no banco.");
+      return data as Totais;
+    },
+    staleTime: 15_000,refetchInterval: 60_000,retry: false,
+  });
+  const totais = consulta.data;
+  return <AppShell titulo="Dashboard" descricao="Indicadores reais de prestação de contas — JTI">
+    <div className="space-y-5">
+      <section className="rounded-xl border border-border bg-card p-5">
+        <div className="flex flex-wrap justify-between gap-3"><h2 className="font-semibold">Prestação de contas</h2><button type="button" disabled={consulta.isFetching} onClick={() => void consulta.refetch()} className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-40">Atualizar indicadores</button></div>
+        <p className="mt-1 text-sm text-muted-foreground">Indicadores do Supabase, incluindo prestações arquivadas. D0 = data da rota, SLA D+3 corridos.</p>
+        {consulta.isError && <p role="alert" className="mt-3 text-sm text-destructive">Não foi possível atualizar os indicadores. {totais ? "Os valores exibidos são da última consulta confirmada." : "Tente atualizar a consulta."}</p>}
+        {consulta.isPending ? <p role="status" className="mt-3 text-sm text-muted-foreground">Carregando indicadores...</p> : totais && <>
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">{([
+            ["Pendências ativas",totais.pendentes],["Críticas D+4",totais.criticas],["Urgentes D+3",totais.urgentes],["Alertas D+2",totais.alertas],["Baixadas",totais.baixadas],
+          ] as const).map(([titulo,quantidade]) => <div key={titulo} className="rounded-lg bg-muted p-4"><p className="text-xs text-muted-foreground">{titulo}</p><p className="mt-2 text-2xl font-semibold">{quantidade.toLocaleString("pt-BR")}</p></div>)}</div>
+          <p className="mt-3 text-sm text-muted-foreground">{totais.arquivadas.toLocaleString("pt-BR")} prestação(ões) retirada(s) da listagem operacional após exportação e envio; seus totais permanecem neste painel.</p>
+        </>}
+      </section>
+      <section className="rounded-xl border border-border bg-card p-5"><h2 className="font-semibold">Visão operacional</h2><p className="mt-2 text-sm text-muted-foreground">Indicadores de entregas, frota, quilômetros e faturamento dependem de fontes reais validadas.</p></section>
+    </div>
+  </AppShell>;
 }

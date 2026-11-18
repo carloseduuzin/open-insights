@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { z } from "zod";
@@ -30,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { prestadores as iniciais } from "@/data/mock";
+import { prestadoresService } from "@/services/prestadores";
 import type { Disponibilidade, Prestador, TipoVeiculo } from "@/types";
 
 export const Route = createFileRoute("/prestadores")({
@@ -50,7 +50,7 @@ export const Route = createFileRoute("/prestadores")({
   component: Prestadores,
 });
 
-const BASES = ["Guarulhos", "Osasco", "Santo André", "Campinas", "Sorocaba", "Jundiaí"];
+const BASES = ["Cross Guarulhos", "Cross Sul", "Cross Barueri", "CD Limão"];
 const VEICULOS: TipoVeiculo[] = ["Moto", "Fiorino", "VUC"];
 const DISPON: Disponibilidade[] = ["Disponível", "Em rota", "Indisponível"];
 const STATUS: Prestador["status"][] = ["Ativo", "Pendente", "Inativo"];
@@ -85,14 +85,32 @@ const tomStatus: Record<Prestador["status"], string> = {
 };
 
 function Prestadores() {
-  const [lista, setLista] = useState<Prestador[]>(iniciais);
+  const [lista, setLista] = useState<Prestador[]>([]);
   const [busca, setBusca] = useState("");
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [erroApi, setErroApi] = useState<string | null>(null);
+  const [admin, setAdmin] = useState(false);
+
+  async function recarregar() {
+    setErroApi(null);
+    try { setLista(await prestadoresService.listar()); }
+    catch (e) { setErroApi(e instanceof Error ? e.message : "Falha ao consultar prestadores."); }
+    finally { setCarregando(false); }
+  }
+
+  useEffect(() => {
+    void recarregar();
+    prestadoresService.ehAdmin().then(setAdmin).catch(() => setAdmin(false));
+  }, []);
   const [fBase, setFBase] = useState("todas");
   const [fDisp, setFDisp] = useState("todas");
   const [aberto, setAberto] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(vazio);
   const [erros, setErros] = useState<Record<string, string>>({});
+
+  const basesDisponiveis = useMemo(() => [...new Set([...BASES, ...lista.map((p) => p.base)])].sort(), [lista]);
 
   const filtrados = useMemo(
     () =>
@@ -106,12 +124,14 @@ function Prestadores() {
   );
 
   const abrirNovo = () => {
+    setErroApi(null);
     setEditId(null);
     setForm(vazio);
     setErros({});
     setAberto(true);
   };
   const abrirEdicao = (p: Prestador) => {
+    setErroApi(null);
     const { id, ...resto } = p;
     setEditId(id);
     setForm(resto);
@@ -119,7 +139,7 @@ function Prestadores() {
     setAberto(true);
   };
 
-  const salvar = () => {
+  const salvar = async () => {
     const r = schema.safeParse(form);
     if (!r.success) {
       const e: Record<string, string> = {};
@@ -127,19 +147,42 @@ function Prestadores() {
       setErros(e);
       return;
     }
-    const dados = { ...form, placa: form.placa.toUpperCase() };
-    if (editId) setLista((l) => l.map((p) => (p.id === editId ? { ...dados, id: editId } : p)));
-    else setLista((l) => [...l, { ...dados, id: crypto.randomUUID() }]);
-    setAberto(false);
+    setSalvando(true);
+    setErroApi(null);
+    try {
+      const dados = { ...form, placa: form.placa.toUpperCase() };
+      if (editId) await prestadoresService.atualizar(editId, dados);
+      else await prestadoresService.criar(dados);
+      setAberto(false);
+      await recarregar();
+    } catch (e) {
+      const mensagem = e instanceof Error ? e.message : "Não foi possível salvar.";
+      setErroApi(mensagem);
+      setErros((anterior) => ({ ...anterior, formulario: mensagem }));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const excluir = async (p: Prestador) => {
+    if (!admin || !window.confirm(`Excluir permanentemente ${p.nome}? Esta ação não pode ser desfeita.`)) return;
+    setErroApi(null);
+    try {
+      await prestadoresService.excluir(p.id);
+      await recarregar();
+    } catch (e) {
+      setErroApi(e instanceof Error ? e.message : "Não foi possível excluir.");
+    }
   };
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
     <AppShell titulo="Prestadores" descricao="Cadastro, edição e disponibilidade da malha">
+      {erroApi && <p role="alert" className="mb-4 rounded-lg border border-destructive/40 p-3 text-sm text-destructive">{erroApi}</p>}
       <Card className="border-border bg-card">
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <CardTitle className="text-base">Prestadores cadastrados ({filtrados.length})</CardTitle>
+          <CardTitle className="text-base">{carregando ? "Carregando prestadores..." : `Prestadores cadastrados (${filtrados.length})`}</CardTitle>
           <Button onClick={abrirNovo}>
             <Plus className="h-4 w-4" /> Novo prestador
           </Button>
@@ -159,7 +202,7 @@ function Prestadores() {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="todas">Todas as bases</SelectItem>
-                {BASES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                {basesDisponiveis.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={fDisp} onValueChange={setFDisp}>
@@ -198,14 +241,14 @@ function Prestadores() {
                       <Button size="icon" variant="ghost" aria-label="Editar" onClick={() => abrirEdicao(p)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button
+                      {admin && <Button
                         size="icon"
                         variant="ghost"
-                        aria-label="Excluir"
-                        onClick={() => confirm(`Excluir ${p.nome}?`) && setLista((l) => l.filter((x) => x.id !== p.id))}
+                        aria-label="Excluir permanentemente"
+                        onClick={() => void excluir(p)}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      </Button>}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -227,6 +270,7 @@ function Prestadores() {
           <DialogHeader>
             <DialogTitle>{editId ? "Editar prestador" : "Novo prestador"}</DialogTitle>
           </DialogHeader>
+          {erros["formulario"] && <p role="alert" className="text-sm text-destructive">{erros["formulario"]}</p>}
           <div className="grid gap-4 sm:grid-cols-2">
             <Campo label="Nome" erro={erros["nome"]} className="sm:col-span-2">
               <Input value={form.nome} maxLength={100} onChange={(e) => set("nome", e.target.value)} />
@@ -264,7 +308,7 @@ function Prestadores() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAberto(false)}>Cancelar</Button>
-            <Button onClick={salvar}>{editId ? "Salvar alterações" : "Cadastrar"}</Button>
+            <Button onClick={() => void salvar()} disabled={salvando}>{salvando ? "Salvando..." : editId ? "Salvar alterações" : "Cadastrar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

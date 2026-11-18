@@ -1,0 +1,90 @@
+name: SIGO bipagem backend / PostgreSQL 17
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - feat/sigo-supabase-v1
+    paths:
+      - 'supabase/**'
+      - 'tests/bipagem-*'
+      - '.github/workflows/sigo-bipagem-backend.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bipagem-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sigo_bipagem_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sigo_bipagem_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: sigo_bipagem_ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare ephemeral PostgreSQL / auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE anon NOLOGIN;
+          CREATE ROLE authenticated NOLOGIN;
+          CREATE ROLE service_role NOLOGIN;
+          CREATE SCHEMA auth;
+          CREATE TABLE auth.users(id uuid PRIMARY KEY,raw_user_meta_data jsonb);
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
+            AS $$ SELECT NULLIF(current_setting('sigo.uid',true),'')::uuid $$;
+          SQL
+      - name: Apply schema baseline and all incremental migrations, including 0450
+        shell: bash
+        run: |
+          set -euo pipefail
+          for migration in supabase/migrations/*.sql; do
+            echo "Applying $migration"
+            psql -X -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Test 11 backend scenarios with 2 users
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/bipagem-backend.sql
+      - name: Export SQL normalization using the shared cases JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 \
+            -v cases_json="$(cat tests/bipagem-normalizacao-cases.json)" \
+            -At <<'SQL' > /tmp/sigo-normalizacao-sql.txt
+          SELECT coalesce(public.sigo_normalizar_codigo_canhoto(v.value),'<NULL>')
+          FROM jsonb_array_elements_text(:'cases_json'::jsonb) WITH ORDINALITY v(value,n)
+          ORDER BY v.n;
+          SQL
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Compare SQL normalization with TypeScript
+        env:
+          SIGO_SQL_NORMALIZATION_OUTPUT: /tmp/sigo-normalizacao-sql.txt
+        run: node --experimental-strip-types --test tests/bipagem-normalizacao.test.mjs
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm run test
